@@ -37,6 +37,19 @@ write API for ingestion. It is a standalone leaf, not part of Axiom or Vellum.
 4. **No project ownership.** Mneme is a shared library, not the system of record
    for Bandit or any other product. Do not fold another product's authoritative
    state into it.
+5. **Not doctrine, not agent memory.** The dividing line is provenance:
+   - **Authored-by-us, canonical** ("how we work", host runbooks, standards)
+     lives in git — Axiom Handbook / Ops Reference / `ctrl-alt-standards` —
+     never here. If a document has no external source and we *assert* it as
+     truth, it is doctrine, not research.
+   - **Captured-from-outside** (has a `source_url`, an author who isn't us,
+     a `captured_at`) belongs in Mneme. Research is citable and durable; it
+     accumulates and is never silently rewritten.
+   - **Mutable agent working memory** (session state, learned preferences,
+     scratch recall that gets overwritten or expires) is a *different
+     lifecycle* and is **not** a v1 Mneme use. If agent memory becomes a real
+     need, it is a deliberate product decision with its own document class and
+     retention rules — not a quiet reuse of the research library.
 
 ## Access rules
 
