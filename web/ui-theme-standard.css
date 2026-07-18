@@ -1,0 +1,704 @@
+/*
+ * Canonical ctrl-alt theme tokens (source of truth for downstream apps).
+ * Copy into each app (e.g. frontend/src/ca-theme-standard.css); keep copies
+ * aligned when this file changes.
+ *
+ * HTML contract:
+ *   - Set data-ca-theme="light" | "dark" | "games" on <html>.
+ *   - Set data-ca-density="dense" | "default" | "airy" | "touch" (expression profiles).
+ *   - Set data-ca-motion="subtle" | "standard" | "celebratory" (expression profiles).
+ *   - If you use Tailwind with darkMode: "class", also toggle class "dark" on
+ *     <html> in sync with data-ca-theme (see THEMING.md in this repo).
+ *   - Or call foundation/expression/apply-expression-profile.ts with the app's
+ *     contracts/expression/<app>.expression.json.
+ *
+ * Typography: two-family stack — Plus Jakarta Sans for display / section titles;
+ * Inter for body, UI chrome, and monospace reserved for technical strings
+ * (see README.md UI Branding section). Load both families in index.html
+ * (Google Fonts or self-hosted).
+ *
+ * Type scale: fixed rem ramp (~1.125 major second) for dense UIs; pair with
+ * Tailwind fontSize aliases in templates/tailwind-ctrl-alt-extend.js. Light-on-dark
+ * uses slightly looser body leading and hairline tracking (THEMING.md).
+ *
+ * Palette: Control Alt Midnight Blue default (deep navy canvas, cyan interactive
+ * lane). Logo trace may retain ember/orange pixels; amber/gold stays warning-only.
+ */
+:root {
+  --ca-font-sans: Inter, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --ca-font-display: "Plus Jakarta Sans", var(--ca-font-sans);
+  --ca-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  /* Type sizes — use rem for user zoom (never px for body copy). */
+  --ca-text-2xs: 0.6875rem;
+  --ca-text-xs: 0.75rem;
+  --ca-text-sm: 0.875rem;
+  --ca-text-base: 1rem;
+  --ca-text-lg: 1.125rem;
+  --ca-text-xl: 1.25rem;
+  --ca-text-2xl: 1.5rem;
+  --ca-text-3xl: 1.875rem;
+  /* Line-height roles */
+  --ca-leading-none: 1.1;
+  --ca-leading-tight: 1.2;
+  --ca-leading-snug: 1.35;
+  --ca-leading-normal: 1.5;
+  --ca-leading-relaxed: 1.65;
+  /* Default body rhythm (dark canvas); light theme overrides below. */
+  --ca-leading-body: 1.62;
+  --ca-tracking-body: 0.0125em;
+  --ca-tracking-tight: -0.02em;
+  --ca-tracking-normal: 0;
+  --ca-tracking-wide: 0.05em;
+  --ca-tracking-overline: 0.22em;
+  /*
+   * Dark canvas: Midnight Blue — navy base, cool slate surfaces, cyan interactive lane.
+   *
+   * Derivation contract (2026-07-15): only the primaries below carry literal
+   * hex. Every other surface, border, text tier, and brand step is color-mixed
+   * from them, so a theme override of the primaries (e.g. Axiom
+   * resolved_token_overrides) retints the whole app coherently instead of
+   * leaving hardcoded navy chrome behind a re-skinned panel layer.
+   * Primaries: --ca-bg, --ca-text-primary, --ca-brand-500, --ca-accent-500.
+   */
+  --ca-bg: #070b12;
+  --ca-bg-radial-top: color-mix(in srgb, var(--ca-bg) 88%, var(--ca-brand-500) 12%);
+  --ca-surface: color-mix(in srgb, var(--ca-bg) 93%, var(--ca-text-primary) 7%);
+  --ca-border-subtle: color-mix(in srgb, var(--ca-text-primary) 9%, transparent);
+  --ca-surface-border: color-mix(in srgb, var(--ca-text-primary) 17%, var(--ca-bg));
+  --ca-border-strong: color-mix(in srgb, var(--ca-text-primary) 28%, var(--ca-bg));
+  --ca-text-primary: #f8fafc;
+  --ca-text-secondary: color-mix(in srgb, var(--ca-text-primary) 80%, var(--ca-bg));
+  --ca-text-muted: color-mix(in srgb, var(--ca-text-primary) 62%, var(--ca-bg));
+  --ca-text-placeholder: color-mix(in srgb, var(--ca-text-primary) 44%, var(--ca-bg));
+  --ca-fill-inset: color-mix(in srgb, var(--ca-bg) 87%, var(--ca-text-primary));
+  --ca-fill-inset-mid: color-mix(in srgb, var(--ca-bg) 90%, var(--ca-text-primary));
+  --ca-fill-code: color-mix(in srgb, var(--ca-bg) 55%, var(--ca-surface));
+  --ca-brand-400: color-mix(in srgb, var(--ca-brand-500) 62%, white);
+  --ca-brand-500: #38bdf8;
+  --ca-brand-600: color-mix(in srgb, var(--ca-brand-500) 70%, #041e33);
+  --ca-accent-500: #f0b41e;
+  --ca-on-brand: #f8fafc;
+  --ca-focus-ring: color-mix(in srgb, var(--ca-brand-400) 65%, transparent);
+  --ca-focus-ring-offset: 3px;
+  /* Sidebar active route: stripe + brand tint (not ember fill). */
+  --ca-nav-active-bg: color-mix(in srgb, var(--ca-brand-500) 18%, var(--ca-surface));
+  --ca-nav-active-border: var(--ca-brand-500);
+  /* Third surface tier for hero cards / key panels. */
+  --ca-surface-elevated: color-mix(in srgb, var(--ca-bg) 89%, var(--ca-text-primary));
+  --ca-shadow-elevated: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 12px 36px rgba(0, 0, 0, 0.45);
+  /* Shell: darker rail + canvas vs lifted content surfaces (chrome vs field). */
+  --ca-shell-sidebar-bg: color-mix(in srgb, var(--ca-bg) 64%, black);
+  --ca-shell-content-bg: color-mix(in srgb, var(--ca-bg) 78%, var(--ca-surface));
+  /*
+   * Semantic status — success/error/warning/info independent of brand cyan.
+   * Use *-fg for labels/icons, *-muted for chips/banners/toasts, *-border for outlines.
+   */
+  --ca-status-success-fg: #a8d4bc;
+  --ca-status-success-muted: color-mix(in srgb, #3d7a5c 26%, var(--ca-surface));
+  --ca-status-success-border: color-mix(in srgb, var(--ca-status-success-fg) 42%, var(--ca-surface-border));
+
+  --ca-status-error-fg: #f2b5a8;
+  --ca-status-error-muted: color-mix(in srgb, #9a3d32 30%, var(--ca-surface));
+  --ca-status-error-border: color-mix(in srgb, var(--ca-status-error-fg) 45%, var(--ca-surface-border));
+
+  --ca-status-warning-fg: #f0d68a;
+  --ca-status-warning-muted: color-mix(in srgb, var(--ca-accent-500) 22%, var(--ca-bg));
+  --ca-status-warning-border: color-mix(in srgb, var(--ca-accent-500) 48%, var(--ca-surface-border));
+
+  --ca-status-info-fg: #a3cce8;
+  --ca-status-info-muted: color-mix(in srgb, #356891 28%, var(--ca-surface));
+  --ca-status-info-border: color-mix(in srgb, var(--ca-status-info-fg) 40%, var(--ca-surface-border));
+  /*
+   * Quiet hierarchy accents (promoted from Axiom Home v004 pixel calibration).
+   * Prefer these over ad-hoc muted hex in operator UI.
+   */
+  --ca-text-faint: color-mix(in srgb, var(--ca-text-primary) 46%, var(--ca-bg));
+  --ca-border-soft: color-mix(in srgb, var(--ca-text-primary) 10%, var(--ca-bg));
+  --ca-progress-complete: #52b788;
+  --ca-progress-stalled: #e0a458;
+  --ca-on-brand-ink: #04141f;
+  /* Spacing scale (4px base). Density presets remap --ca-space-* consumers below. */
+  --ca-space-1: 0.25rem;
+  --ca-space-2: 0.5rem;
+  --ca-space-3: 0.75rem;
+  --ca-space-4: 1rem;
+  --ca-space-5: 1.25rem;
+  --ca-space-6: 1.5rem;
+  --ca-space-7: 1.75rem;
+  --ca-space-8: 2rem;
+  --ca-space-9: 2.25rem;
+  --ca-space-10: 2.5rem;
+  --ca-space-11: 2.75rem;
+  --ca-space-12: 3rem;
+  /* Radius scale */
+  --ca-radius-sm: 0.375rem;
+  --ca-radius-md: 0.75rem;
+  --ca-radius-lg: 1rem;
+  --ca-radius-full: 9999px;
+  /* Control height (density remaps). Default / dense sit at compact console size. */
+  --ca-control-height: 2rem;
+  --ca-control-height-sm: 1.75rem;
+  --ca-control-height-lg: 2.25rem;
+  /* Motion (budget presets remap durations; prefers-reduced-motion zeros them). */
+  --ca-motion-duration-fast: 120ms;
+  --ca-motion-duration: 180ms;
+  --ca-motion-duration-slow: 280ms;
+  --ca-motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --ca-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 18px 48px rgba(0, 0, 0, 0.55);
+  /* Layout rhythm (Stitch “Quiet Chrome” framework; optional for apps) */
+  --ca-container-max: 80rem; /* 1280px */
+  --ca-gutter: 1.5rem;
+  /* Outer horizontal inset from viewport; slightly generous so rails + canvas feel “floating”. */
+  --ca-page-margin: 2.25rem;
+  /*
+   * App frame (shell + overlays): one shared top (and side) band so page chrome, cards, and
+   * modals never sit in the raw viewport corner. Uses iOS safe-area when present, else a
+   * minimum operator margin (industry “application window” inset, not a second masthead).
+   * Vertical minimum follows an 8px density grid (e.g. 24px = 3×8) for SaaS/dashboard rhythm.
+   */
+  --ca-safe-area-top: env(safe-area-inset-top, 0px);
+  --ca-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --ca-safe-area-left: env(safe-area-inset-left, 0px);
+  --ca-safe-area-right: env(safe-area-inset-right, 0px);
+  --ca-app-frame-pad-y: 1.5rem;
+  --ca-app-edge-top: max(var(--ca-safe-area-top), var(--ca-app-frame-pad-y));
+  --ca-app-edge-bottom: max(var(--ca-safe-area-bottom), 0.5rem);
+  /* Horizontal gap between sidebar rail and main column (floating lanes). 24px / 32px = 8px grid. */
+  --ca-shell-lane-gap-md: 1.5rem;
+  --ca-shell-lane-gap-lg: 2rem;
+}
+
+/* Shell content row: sidebar + main start on the same top baseline. */
+.ca-app-frame {
+  padding-top: var(--ca-app-edge-top);
+}
+
+/*
+ * Full-viewport modal / lightbox flex root: cards and dialogs stay *below* the app top edge
+ * and clear horizontal safe areas. Pair with .ca-modal-scrim; do not add a separate p-4 top
+ * that fights this (use only horizontal modifiers if you need looser side padding on sm+).
+ */
+.ca-overlay-inset {
+  box-sizing: border-box;
+  padding-top: var(--ca-app-edge-top);
+  padding-bottom: max(1rem, var(--ca-app-edge-bottom));
+  padding-left: max(1rem, var(--ca-safe-area-left));
+  padding-right: max(1rem, var(--ca-safe-area-right));
+}
+
+/* Toast/snackbar column — above home indicator; keeps prior bottom-6 / right-6 rhythm + safe horizontal inset. */
+.ca-toast-stack {
+  pointer-events: none;
+  position: fixed;
+  z-index: 100;
+  bottom: calc(var(--ca-app-edge-bottom) + 1.5rem);
+  right: max(1rem, var(--ca-safe-area-right));
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/*
+ * Toast rows — use inside .ca-toast-stack only (stack keeps pointer-events: none; items opt back in).
+ * Default (.ca-toast-item) matches ctrl-alt-axiom ThemesView neutral snackbars (surface + hairline + shadow).
+ * Modifiers use semantic status tokens (same family as .ca-banner-error).
+ */
+.ca-toast-item {
+  pointer-events: auto;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  max-width: min(100vw - 2rem, 24rem);
+  min-width: 0;
+  border-radius: 0.375rem;
+  border: 1px solid var(--ca-surface-border);
+  background: var(--ca-surface);
+  box-shadow: var(--ca-shadow-lg);
+  padding: 0.5rem 0.75rem;
+  font-size: var(--ca-text-xs);
+  line-height: var(--ca-leading-snug);
+  color: var(--ca-text-primary);
+}
+
+.ca-toast-item--info {
+  border-color: var(--ca-status-info-border);
+  background: var(--ca-status-info-muted);
+}
+
+.ca-toast-item--error {
+  border-color: var(--ca-status-error-border);
+  background: var(--ca-status-error-muted);
+}
+
+.ca-toast-item--success {
+  border-color: var(--ca-status-success-border);
+  background: var(--ca-status-success-muted);
+}
+
+.ca-toast-item--warning {
+  border-color: var(--ca-status-warning-border);
+  background: var(--ca-status-warning-muted);
+}
+
+.ca-toast-item__body {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-weight: 500;
+}
+
+.ca-toast-item__dismiss {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--ca-text-xs);
+  line-height: 1;
+  color: var(--ca-text-muted);
+}
+
+.ca-toast-item__dismiss:hover {
+  color: var(--ca-text-primary);
+}
+
+/* Floating theme control when sidebar rail is hidden — same vertical band as toasts; clears left safe area. */
+.ca-floating-chrome-bottom-left {
+  position: fixed;
+  z-index: 50;
+  bottom: calc(var(--ca-app-edge-bottom) + 1.5rem);
+  left: max(0.5rem, var(--ca-safe-area-left));
+}
+
+/* Full-width docked bottom chrome (e.g. queue bar): inner padding clears thumb / home indicator. */
+.ca-docked-bar-safe-bottom {
+  padding-bottom: var(--ca-app-edge-bottom);
+}
+
+[data-ca-theme="light"] {
+  --ca-bg: #faf8f5;
+  --ca-bg-radial-top: #ebe5dd;
+  --ca-surface: rgba(255, 255, 255, 0.94);
+  --ca-border-subtle: rgba(72, 62, 54, 0.12);
+  --ca-surface-border: rgba(90, 78, 68, 0.26);
+  --ca-border-strong: rgba(72, 62, 54, 0.38);
+  --ca-text-primary: #1c1410;
+  --ca-text-secondary: #453d36;
+  --ca-text-muted: #5c554c;
+  --ca-text-placeholder: #7a7268;
+  --ca-fill-inset: color-mix(in srgb, var(--ca-bg) 78%, var(--ca-text-primary) 4%);
+  --ca-fill-inset-mid: color-mix(in srgb, var(--ca-bg) 62%, var(--ca-text-primary) 7%);
+  --ca-fill-code: color-mix(in srgb, var(--ca-surface) 88%, var(--ca-text-primary) 5%);
+  --ca-on-brand: #f8fafc;
+  --ca-focus-ring: rgba(2, 132, 199, 0.45);
+  --ca-focus-ring-offset: 3px;
+  --ca-nav-active-bg: color-mix(in srgb, var(--ca-brand-500) 12%, var(--ca-surface));
+  --ca-nav-active-border: var(--ca-brand-600);
+  --ca-surface-elevated: #ffffff;
+  --ca-shadow-elevated: 0 1px 0 rgba(255, 255, 255, 0.95) inset, 0 14px 28px rgba(28, 20, 16, 0.1);
+  --ca-shell-sidebar-bg: #f3efe8;
+  --ca-shell-content-bg: #faf8f5;
+
+  --ca-status-success-fg: #1d6b4a;
+  --ca-status-success-muted: color-mix(in srgb, var(--ca-status-success-fg) 14%, var(--ca-bg));
+  --ca-status-success-border: color-mix(in srgb, var(--ca-status-success-fg) 32%, var(--ca-surface-border));
+
+  --ca-status-error-fg: #b42318;
+  --ca-status-error-muted: color-mix(in srgb, var(--ca-status-error-fg) 12%, var(--ca-bg));
+  --ca-status-error-border: color-mix(in srgb, var(--ca-status-error-fg) 35%, var(--ca-surface-border));
+
+  --ca-status-warning-fg: #a16207;
+  --ca-status-warning-muted: color-mix(in srgb, var(--ca-accent-500) 16%, var(--ca-bg));
+  --ca-status-warning-border: color-mix(in srgb, var(--ca-status-warning-fg) 38%, var(--ca-surface-border));
+
+  --ca-status-info-fg: #1e5f8a;
+  --ca-status-info-muted: color-mix(in srgb, var(--ca-status-info-fg) 12%, var(--ca-bg));
+  --ca-status-info-border: color-mix(in srgb, var(--ca-status-info-fg) 32%, var(--ca-surface-border));
+  --ca-shadow-lg: 0 16px 32px rgba(28, 20, 16, 0.12);
+  --ca-leading-body: 1.55;
+  --ca-tracking-body: 0;
+}
+
+[data-ca-theme="dark"] {
+  /* Dark canvas: Midnight Blue — repeats :root for explicit dark hydration (same derivation contract). */
+  --ca-bg: #070b12;
+  --ca-bg-radial-top: color-mix(in srgb, var(--ca-bg) 88%, var(--ca-brand-500) 12%);
+  --ca-surface: color-mix(in srgb, var(--ca-bg) 93%, var(--ca-text-primary) 7%);
+  --ca-border-subtle: color-mix(in srgb, var(--ca-text-primary) 9%, transparent);
+  --ca-surface-border: color-mix(in srgb, var(--ca-text-primary) 17%, var(--ca-bg));
+  --ca-border-strong: color-mix(in srgb, var(--ca-text-primary) 28%, var(--ca-bg));
+  --ca-text-primary: #f8fafc;
+  --ca-text-secondary: color-mix(in srgb, var(--ca-text-primary) 80%, var(--ca-bg));
+  --ca-text-muted: color-mix(in srgb, var(--ca-text-primary) 62%, var(--ca-bg));
+  --ca-text-placeholder: color-mix(in srgb, var(--ca-text-primary) 44%, var(--ca-bg));
+  --ca-fill-inset: color-mix(in srgb, var(--ca-bg) 87%, var(--ca-text-primary));
+  --ca-fill-inset-mid: color-mix(in srgb, var(--ca-bg) 90%, var(--ca-text-primary));
+  --ca-fill-code: color-mix(in srgb, var(--ca-bg) 55%, var(--ca-surface));
+  --ca-on-brand: #f8fafc;
+  --ca-focus-ring: color-mix(in srgb, var(--ca-brand-400) 65%, transparent);
+  --ca-focus-ring-offset: 3px;
+  --ca-nav-active-bg: color-mix(in srgb, var(--ca-brand-500) 18%, var(--ca-surface));
+  --ca-nav-active-border: var(--ca-brand-500);
+  --ca-surface-elevated: color-mix(in srgb, var(--ca-bg) 89%, var(--ca-text-primary));
+  --ca-shadow-elevated: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 12px 36px rgba(0, 0, 0, 0.45);
+  --ca-shell-sidebar-bg: color-mix(in srgb, var(--ca-bg) 64%, black);
+  --ca-shell-content-bg: color-mix(in srgb, var(--ca-bg) 78%, var(--ca-surface));
+
+  --ca-status-success-fg: #a8d4bc;
+  --ca-status-success-muted: color-mix(in srgb, #3d7a5c 26%, var(--ca-surface));
+  --ca-status-success-border: color-mix(in srgb, var(--ca-status-success-fg) 42%, var(--ca-surface-border));
+
+  --ca-status-error-fg: #f2b5a8;
+  --ca-status-error-muted: color-mix(in srgb, #9a3d32 30%, var(--ca-surface));
+  --ca-status-error-border: color-mix(in srgb, var(--ca-status-error-fg) 45%, var(--ca-surface-border));
+
+  --ca-status-warning-fg: #f0d68a;
+  --ca-status-warning-muted: color-mix(in srgb, var(--ca-accent-500) 22%, var(--ca-bg));
+  --ca-status-warning-border: color-mix(in srgb, var(--ca-accent-500) 48%, var(--ca-surface-border));
+
+  --ca-status-info-fg: #a3cce8;
+  --ca-status-info-muted: color-mix(in srgb, #356891 28%, var(--ca-surface));
+  --ca-status-info-border: color-mix(in srgb, var(--ca-status-info-fg) 40%, var(--ca-surface-border));
+
+  --ca-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 18px 48px rgba(0, 0, 0, 0.55);
+  --ca-leading-body: 1.62;
+  --ca-tracking-body: 0.0125em;
+}
+
+/*
+ * Control Alt Games — the creative-label palette (Vellum today; LCARD, Hail,
+ * Slots, Dobsonian Universe later). Same tokens and .ca-* classes as Core,
+ * different skin: warm parchment canvas, forest-green interactive lane,
+ * square-cornered ("ledger"/ink-stamp) surfaces instead of Core's rounded
+ * "ops console" look. Values below are lifted directly from Vellum's own
+ * existing web/styles.css (:root) wherever a direct match exists -- this
+ * codifies a look that already shipped, it doesn't invent one. Anything
+ * marked "derived" fills a gap Vellum's simpler stylesheet never needed
+ * (e.g. a distinct warning hue) using the same color-mix relationships the
+ * rest of this file already uses, not a freehand color choice.
+ */
+[data-ca-theme="games"] {
+  --ca-font-sans: "DM Sans", system-ui, sans-serif;
+  --ca-font-display: var(--ca-font-sans); /* Vellum uses one family for both; no second display face to fabricate. */
+  --ca-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --ca-bg: #f3efe6; /* Vellum --paper */
+  --ca-bg-radial-top: #e4efe6; /* first radial highlight stop in Vellum's body background */
+  --ca-surface: #faf7f0; /* Vellum --panel */
+  --ca-border-subtle: rgba(212, 205, 192, 0.4); /* derived: Vellum --line at low alpha */
+  --ca-surface-border: #d4cdc0; /* Vellum --line */
+  --ca-border-strong: color-mix(in srgb, var(--ca-surface-border) 65%, var(--ca-text-primary) 35%); /* derived */
+  --ca-text-primary: #1a1f1c; /* Vellum --ink */
+  --ca-text-secondary: #5c675f; /* Vellum --muted */
+  --ca-text-muted: color-mix(in srgb, var(--ca-text-secondary) 70%, var(--ca-bg) 30%); /* derived */
+  --ca-text-placeholder: color-mix(in srgb, var(--ca-text-secondary) 50%, var(--ca-bg) 50%); /* derived */
+  --ca-fill-inset: color-mix(in srgb, var(--ca-bg) 80%, var(--ca-text-primary) 4%); /* derived, same formula as Core light */
+  --ca-fill-inset-mid: color-mix(in srgb, var(--ca-bg) 65%, var(--ca-text-primary) 7%); /* derived */
+  --ca-fill-code: color-mix(in srgb, var(--ca-surface) 88%, var(--ca-text-primary) 5%); /* derived */
+  --ca-brand-400: color-mix(in srgb, var(--ca-brand-500) 55%, white); /* derived tint */
+  --ca-brand-500: #2f6b4f; /* Vellum --accent */
+  --ca-brand-600: color-mix(in srgb, var(--ca-brand-500) 80%, black); /* derived shade */
+  --ca-accent-500: #a9761c; /* derived: antique-brass warning hue -- Vellum's stylesheet never needed a warning-only accent distinct from --accent */
+  --ca-on-brand: #faf7f0;
+  --ca-focus-ring: color-mix(in srgb, var(--ca-brand-500) 45%, transparent); /* lifted verbatim from Vellum's own focus-visible rule */
+  --ca-focus-ring-offset: 1px; /* lifted verbatim from Vellum */
+  --ca-nav-active-bg: color-mix(in srgb, var(--ca-brand-500) 12%, var(--ca-surface));
+  --ca-nav-active-border: var(--ca-brand-600);
+  --ca-surface-elevated: #ffffff;
+  --ca-shadow-elevated: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 14px 28px rgba(26, 31, 28, 0.12);
+  --ca-shell-sidebar-bg: color-mix(in srgb, var(--ca-bg) 92%, var(--ca-text-primary) 4%);
+  --ca-shell-content-bg: var(--ca-bg);
+
+  --ca-status-success-fg: #1f7a4c; /* Vellum --open */
+  --ca-status-success-muted: #d8f0e2; /* Vellum --open-bg */
+  --ca-status-success-border: color-mix(in srgb, var(--ca-status-success-fg) 35%, var(--ca-surface-border));
+
+  --ca-status-error-fg: #a33b32; /* Vellum --expired */
+  --ca-status-error-muted: #f8ddd9; /* Vellum --expired-bg */
+  --ca-status-error-border: color-mix(in srgb, var(--ca-status-error-fg) 38%, var(--ca-surface-border));
+
+  --ca-status-warning-fg: #8a6314; /* derived: darker step of --ca-accent-500 above, readable on the paper canvas */
+  --ca-status-warning-muted: color-mix(in srgb, var(--ca-accent-500) 18%, var(--ca-bg));
+  --ca-status-warning-border: color-mix(in srgb, var(--ca-accent-500) 45%, var(--ca-surface-border));
+
+  --ca-status-info-fg: #6b6570; /* Vellum --unknown */
+  --ca-status-info-muted: #e8e4ec; /* Vellum --unknown-bg */
+  --ca-status-info-border: color-mix(in srgb, var(--ca-status-info-fg) 35%, var(--ca-surface-border));
+
+  /* Vellum's own components (.pill, .stat, .table-wrap) use a 2px radius --
+     square, ledger/ink-stamp cornered, deliberately not Core's soft rounded
+     "ops console" look. Real, load-bearing difference, not an oversight. */
+  --ca-radius-sm: 0.0625rem;
+  --ca-radius-md: 0.125rem;
+  --ca-radius-lg: 0.25rem;
+  --ca-text-faint: color-mix(in srgb, var(--ca-text-secondary) 55%, var(--ca-bg) 45%);
+  --ca-border-soft: color-mix(in srgb, var(--ca-surface-border) 70%, var(--ca-bg) 30%);
+  --ca-progress-complete: var(--ca-status-success-fg);
+  --ca-progress-stalled: var(--ca-accent-500);
+  --ca-on-brand-ink: var(--ca-on-brand);
+  --ca-shadow-lg: 0 10px 24px rgba(26, 31, 28, 0.1);
+  --ca-leading-body: 1.55;
+  --ca-tracking-body: 0;
+}
+
+/*
+ * Density presets (Foundation Layer 2). Set data-ca-density on <html>.
+ * Remaps control heights, gutters, and lane gaps — semantic color tokens stay put.
+ */
+[data-ca-density="dense"] {
+  --ca-control-height: 1.75rem;
+  --ca-control-height-sm: 1.5rem;
+  --ca-control-height-lg: 2rem;
+  --ca-gutter: 1rem;
+  --ca-page-margin: 1.5rem;
+  --ca-app-frame-pad-y: 1rem;
+  --ca-shell-lane-gap-md: 1rem;
+  --ca-shell-lane-gap-lg: 1.25rem;
+}
+
+[data-ca-density="default"] {
+  --ca-control-height: 2rem;
+  --ca-control-height-sm: 1.75rem;
+  --ca-control-height-lg: 2.25rem;
+}
+
+[data-ca-density="airy"] {
+  --ca-control-height: 2.5rem;
+  --ca-control-height-sm: 2rem;
+  --ca-control-height-lg: 2.75rem;
+  --ca-gutter: 2rem;
+  --ca-page-margin: 3rem;
+  --ca-app-frame-pad-y: 2rem;
+  --ca-shell-lane-gap-md: 2rem;
+  --ca-shell-lane-gap-lg: 2.5rem;
+  --ca-space-3: 0.875rem;
+  --ca-space-4: 1.125rem;
+  --ca-space-6: 1.75rem;
+}
+
+[data-ca-density="touch"] {
+  --ca-control-height: 2.75rem; /* ≥44px at default root */
+  --ca-control-height-sm: 2.5rem;
+  --ca-control-height-lg: 3rem;
+  --ca-gutter: 1.75rem;
+  --ca-page-margin: 2rem;
+  --ca-app-frame-pad-y: 1.75rem;
+  --ca-text-sm: 1rem;
+  --ca-text-base: 1.125rem;
+}
+
+/*
+ * Motion budgets (Foundation Layer 2). Set data-ca-motion on <html>.
+ * prefers-reduced-motion always wins.
+ */
+[data-ca-motion="subtle"] {
+  --ca-motion-duration-fast: 80ms;
+  --ca-motion-duration: 140ms;
+  --ca-motion-duration-slow: 200ms;
+}
+
+[data-ca-motion="standard"] {
+  --ca-motion-duration-fast: 120ms;
+  --ca-motion-duration: 180ms;
+  --ca-motion-duration-slow: 280ms;
+}
+
+[data-ca-motion="celebratory"] {
+  --ca-motion-duration-fast: 160ms;
+  --ca-motion-duration: 260ms;
+  --ca-motion-duration-slow: 420ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  [data-ca-motion="subtle"],
+  [data-ca-motion="standard"],
+  [data-ca-motion="celebratory"] {
+    --ca-motion-duration-fast: 0.01ms;
+    --ca-motion-duration: 0.01ms;
+    --ca-motion-duration-slow: 0.01ms;
+  }
+}
+
+body {
+  font-family: var(--ca-font-sans);
+  font-size: var(--ca-text-base);
+  line-height: var(--ca-leading-body);
+  letter-spacing: var(--ca-tracking-body);
+  color: var(--ca-text-primary);
+  background-color: var(--ca-bg);
+  background-image: radial-gradient(circle at 50% -20%, var(--ca-bg-radial-top) 0%, var(--ca-bg) 100%);
+}
+
+.ca-surface {
+  background: var(--ca-surface);
+  border: 1px solid var(--ca-surface-border);
+  border-radius: var(--ca-radius-md);
+  box-shadow: var(--ca-shadow-lg);
+}
+
+/* Top-centered logo block; use lg:!justify-start on .ca-logo-block for split mastheads. */
+.ca-logo-block {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin: 0 auto 1rem;
+}
+
+.ca-logo-frame {
+  width: min(100%, 1200px);
+  aspect-ratio: 1200 / 230;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.ca-logo-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* Compact phones / narrow splits: keep masthead from dominating above-the-fold */
+@media (max-width: 639px) {
+  .ca-logo-block {
+    margin-bottom: 0.75rem;
+  }
+
+  .ca-logo-frame {
+    width: min(100%, 92vw);
+    max-height: min(7.5rem, 26vw);
+    aspect-ratio: 1200 / 230;
+  }
+}
+
+/* Optional section divider below masthead / hero (border token only; add padding in app). */
+.ca-masthead-separator {
+  border-bottom: 1px solid var(--ca-surface-border);
+}
+
+/* Semantic type (masthead + sections); complements Tailwind text-ca-* in tailwind-ctrl-alt-extend.js */
+.ca-type-overline {
+  font-size: var(--ca-text-xs);
+  font-weight: 600;
+  line-height: var(--ca-leading-snug);
+  letter-spacing: var(--ca-tracking-overline);
+  text-transform: uppercase;
+  color: var(--ca-text-muted);
+}
+
+.ca-type-display {
+  font-family: var(--ca-font-display);
+  font-size: var(--ca-text-2xl);
+  font-weight: 700;
+  line-height: var(--ca-leading-tight);
+  letter-spacing: var(--ca-tracking-tight);
+  color: var(--ca-text-primary);
+}
+
+@media (min-width: 640px) {
+  .ca-type-display {
+    font-size: var(--ca-text-3xl);
+  }
+}
+
+/* Primary reading blurb; ≥1rem from sm up (body minimum). */
+.ca-type-lede {
+  font-size: var(--ca-text-sm);
+  line-height: var(--ca-leading-relaxed);
+  color: var(--ca-text-secondary);
+  max-width: 65ch;
+}
+
+@media (min-width: 640px) {
+  .ca-type-lede {
+    font-size: var(--ca-text-base);
+  }
+}
+
+.ca-type-section-title {
+  font-family: var(--ca-font-display);
+  font-size: var(--ca-text-lg);
+  font-weight: 700;
+  line-height: var(--ca-leading-snug);
+  letter-spacing: var(--ca-tracking-tight);
+  color: var(--ca-text-primary);
+}
+
+@media (min-width: 640px) {
+  .ca-type-section-title {
+    font-size: var(--ca-text-xl);
+  }
+}
+
+.ca-type-subhead {
+  margin-top: 0.125rem;
+  font-size: var(--ca-text-xs);
+  line-height: var(--ca-leading-normal);
+  color: var(--ca-text-muted);
+}
+
+/* Inset panel + inline link (operator UIs; token surfaces instead of generic gray slabs). */
+.ca-panel {
+  border: 1px solid var(--ca-surface-border);
+  background: color-mix(in srgb, var(--ca-surface) 88%, var(--ca-bg));
+  border-radius: var(--ca-radius-md);
+}
+
+/* Raised tier for primary panels / hero cards (distinct from default surface). */
+.ca-panel-elevated {
+  border: 1px solid var(--ca-border-strong);
+  background: var(--ca-surface-elevated);
+  border-radius: var(--ca-radius-md);
+  box-shadow: var(--ca-shadow-elevated);
+}
+
+/* Monospace / JSON fields and <pre> dumps (token-backed fill; avoid raw black tints in components). */
+.ca-code-surface {
+  background-color: var(--ca-fill-code);
+}
+
+/* Secondary inset strips for grouped fields (replaces ad hoc 10–15% black overlays). */
+.ca-inset-strip {
+  background-color: var(--ca-fill-inset-mid);
+}
+
+.ca-inset-strip-strong {
+  background-color: var(--ca-fill-inset);
+}
+
+/* Validation and inline error callouts (semantic status tokens, both themes). */
+.ca-banner-error {
+  border: 1px solid var(--ca-status-error-border);
+  background: var(--ca-status-error-muted);
+  border-radius: var(--ca-radius-md);
+}
+
+.ca-link {
+  color: var(--ca-text-secondary);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--ca-text-muted) 50%, transparent);
+  text-underline-offset: 2px;
+}
+
+.ca-link:hover {
+  color: var(--ca-brand-500);
+  text-decoration-color: color-mix(in srgb, var(--ca-brand-500) 45%, transparent);
+}
+
+.ca-focusable:focus-visible {
+  outline: 2px solid var(--ca-focus-ring);
+  outline-offset: var(--ca-focus-ring-offset);
+}
+
+/*
+ * Modal / lightbox scrim: tint toward --ca-bg instead of pure black (family-wide pattern).
+ * Full-screen roots: fixed inset-0 z-* flex items-center justify-center + .ca-overlay-inset
+ * so dialogs respect --ca-app-edge-top (see above).
+ */
+.ca-modal-scrim {
+  --ca-modal-scrim-base: color-mix(in srgb, var(--ca-bg) 82%, var(--ca-brand-600) 6%);
+  background-color: color-mix(in srgb, var(--ca-modal-scrim-base) 90%, transparent);
+  backdrop-filter: blur(1px);
+}

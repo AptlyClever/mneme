@@ -1,0 +1,31 @@
+# Mneme — gitignore
+
+# Secrets / env (write token lives here on the press; never commit)
+.env
+.env.local
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Runtime catalog / local store (real library lives in the vault)
+data/
+
+# Local dev vault artifacts (real vault lives on the press)
+vault/
+
+# Never track research bytes or attachments — the vault lives outside this repo
+
+# Scratch
+tmp/

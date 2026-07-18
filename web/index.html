@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en" data-ca-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mneme · Research Library</title>
+    <link rel="stylesheet" href="/static/ui-theme-standard.css" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <a class="identity" href="/" aria-label="Mneme home">
+        <span class="mark" aria-hidden="true">M</span>
+        <span>
+          <strong>Mneme</strong>
+          <small>Research Library</small>
+        </span>
+      </a>
+      <button id="new-document" class="primary" type="button">Add document</button>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">Shared memory · Control Alt</p>
+          <h1 id="page-title">What should not be forgotten?</h1>
+        </div>
+        <p>
+          Durable research for every project. Search the library, read captured
+          sources offline, and follow their attached evidence.
+        </p>
+      </section>
+
+      <section class="workspace">
+        <aside class="filters" aria-label="Library filters">
+          <label>
+            <span>Search</span>
+            <input id="search" type="search" placeholder="Title, body, tag…" />
+          </label>
+          <label>
+            <span>Project</span>
+            <input id="project-filter" type="text" placeholder="All projects" />
+          </label>
+          <label>
+            <span>Tag</span>
+            <input id="tag-filter" type="text" placeholder="Any tag" />
+          </label>
+          <div class="library-state">
+            <span id="count">Loading…</span>
+            <span id="health" class="status">Checking vault</span>
+          </div>
+        </aside>
+
+        <section class="results" aria-live="polite">
+          <ol id="document-list" class="document-list"></ol>
+          <div id="empty" class="empty" hidden>
+            <span aria-hidden="true">∅</span>
+            <h2>No research found</h2>
+            <p>Change the filters or add the library’s first document.</p>
+          </div>
+        </section>
+
+        <article id="reader" class="reader" hidden>
+          <button id="close-reader" class="text-button" type="button">← Library</button>
+          <p id="reader-project" class="eyebrow"></p>
+          <h2 id="reader-title"></h2>
+          <div id="reader-meta" class="reader-meta"></div>
+          <div id="reader-body" class="prose"></div>
+          <section id="attachments-section" hidden>
+            <h3>Attachments</h3>
+            <ul id="attachments" class="attachments"></ul>
+          </section>
+        </article>
+      </section>
+    </main>
+
+    <dialog id="ingest-dialog">
+      <form id="ingest-form" method="dialog">
+        <header>
+          <div>
+            <p class="eyebrow">Write to shared memory</p>
+            <h2>Add a research document</h2>
+          </div>
+          <button id="close-dialog" class="icon-button" type="button" aria-label="Close">×</button>
+        </header>
+        <div class="form-grid">
+          <label><span>Title</span><input name="title" required maxlength="500" /></label>
+          <label><span>Project</span><input name="project_id" required placeholder="bandit" /></label>
+          <label class="wide"><span>Source URL</span><input name="source_url" type="url" placeholder="https://…" /></label>
+          <label><span>Author</span><input name="author" /></label>
+          <label><span>Publisher</span><input name="publisher" /></label>
+          <label class="wide"><span>Tags</span><input name="tags" placeholder="slots, market-research" /></label>
+          <label class="wide">
+            <span>Markdown body</span>
+            <textarea name="body" required rows="14" placeholder="# Captured article…"></textarea>
+          </label>
+          <label class="wide">
+            <span>Linked attachments</span>
+            <input name="attachments" type="file" multiple />
+          </label>
+          <label class="wide">
+            <span>Write token</span>
+            <input id="write-token" name="token" type="password" autocomplete="off" required />
+          </label>
+        </div>
+        <footer>
+          <span id="ingest-status" role="status"></span>
+          <button class="primary" type="submit">Store in Mneme</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
