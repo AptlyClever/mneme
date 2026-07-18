@@ -13,6 +13,6 @@ COPY web/ ./web/
 
 RUN mkdir -p data
 
-EXPOSE 8788
+EXPOSE 8790
 
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8788"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8790"]

@@ -8,7 +8,7 @@ open to LAN consumers. Writes require `Authorization: Bearer
 {"detail":"mneme_read_only"}
 ```
 
-Base URL on the press: `http://192.168.68.93:8788/api`
+Base URL on the press: `http://192.168.68.93:8790/api`
 
 ## Document shape
 
@@ -61,7 +61,7 @@ filters. Limits are 1–500.
 - `attachments`: zero or more files
 
 ```bash
-curl -sS -X POST "http://192.168.68.93:8788/api/documents" \
+curl -sS -X POST "http://192.168.68.93:8790/api/documents" \
   -H "Authorization: Bearer $MNEME_WRITE_TOKEN" \
   -F 'metadata={"project_id":"bandit","title":"Slot development trends","publisher":"1spin4win","source_url":"https://example.com/article","tags":["slots","market-research"]}' \
   -F 'body=<./article.md' \

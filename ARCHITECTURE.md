@@ -32,7 +32,7 @@ Axiom and not part of the Vellum asset pipeline.
   is the source of truth; search derives from those durable files.
 - **Deploy:** Docker Compose on the homelab press; operator ship path is Axiom
   Repo Ops (`#/axiom/repo-ops`).
-- **Port:** `8788` (host and container).
+- **Port:** `8790` (host and container).
 
 ## Vault layout
 
@@ -73,7 +73,7 @@ Do not collapse these roles into one path:
 | Role | Machine | Path | Job |
 | --- | --- | --- | --- |
 | **Studio** | Any dev machine (Borealis, …) | GitHub clone, e.g. `E:\Dev\mneme` | Read, design, implement, run local tests, commit, **push** |
-| **Press** | `dev-ubuntu` (`192.168.68.93`) | `/mnt/temp/config/mneme` | Repo Ops deploy checkout; Docker runtime; API `:8788`; vault mount |
+| **Press** | `dev-ubuntu` (`192.168.68.93`) | `/mnt/temp/config/mneme` | Repo Ops deploy checkout; Docker runtime; API `:8790`; vault mount |
 
 - `/mnt/temp/config/mneme` and `/mnt/data/vault/mneme` exist **only on the
   press**. From studio they are not reachable filesystems — no WSL/UNC/SSH file

@@ -55,7 +55,7 @@ Same model as Axiom and Vellum — do not collapse these:
 | Role | Machine | Path | Job |
 | --- | --- | --- | --- |
 | **Studio** | Any dev machine (Borealis, …) | `E:\Dev\mneme` | Read, code, test, commit, **push** |
-| **Press** | `dev-ubuntu` (`192.168.68.93`) | `/mnt/temp/config/mneme` | Repo Ops deploy checkout; Docker runtime; API `:8788`; vault mount |
+| **Press** | `dev-ubuntu` (`192.168.68.93`) | `/mnt/temp/config/mneme` | Repo Ops deploy checkout; Docker runtime; API `:8790`; vault mount |
 
 - `/mnt/temp/config/mneme` and `/mnt/data/vault/mneme` exist **only on the
   press**; not reachable from studio. **Vault I/O is HTTP-only** off the press.
@@ -71,7 +71,7 @@ Same model as Axiom and Vellum — do not collapse these:
   capture-agent (external) responsibility.
 - Do not mutate Axiom / Praxis / Vellum / other apps' runtime infra unless the
   operator explicitly asks.
-- Port `8788`, app id `mneme`, vault `/mnt/data/vault/mneme` are fixed
+- Port `8790`, app id `mneme`, vault `/mnt/data/vault/mneme` are fixed
   identifiers — keep them consistent across compose, docs, and registry.
 
 ## Ship path (Repo Ops)

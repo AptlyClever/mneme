@@ -12,8 +12,8 @@ its first consumer, but Mneme belongs to no single product.
 | Studio (dev) root | `E:\Dev\mneme` (this repo) |
 | Press (runtime) root | `/mnt/temp/config/mneme` on `dev-ubuntu` |
 | Private vault (data) | `/mnt/data/vault/mneme` |
-| Operator UI / API | http://192.168.68.93:8788/ |
-| Health | http://192.168.68.93:8788/api/health |
+| Operator UI / API | http://192.168.68.93:8790/ |
+| Health | http://192.168.68.93:8790/api/health |
 | Read API | open to LAN agents (no token) |
 | Write API | `Authorization: Bearer $MNEME_WRITE_TOKEN` |
 | Secrets | `/mnt/temp/config/mneme/.env` (gitignored) |
@@ -46,7 +46,7 @@ its first consumer, but Mneme belongs to no single product.
 # runs on the press (dev-ubuntu); studio is for editing/testing only
 docker compose up -d --build
 # health
-curl -sS http://127.0.0.1:8788/api/health
+curl -sS http://127.0.0.1:8790/api/health
 ```
 
 ## Start here
