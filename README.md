@@ -39,6 +39,12 @@ its first consumer, but Mneme belongs to no single product.
 - **Not a crawler or extractor (v1).** Mneme does not fetch, scrape, or parse
   the open web itself. External **capture agents** transform sources into
   markdown + attachments and **upload** them through the write API.
+- **Not doctrine, not agent memory.** Canonical authored docs (how-we-work,
+  runbooks, standards) live in git and render in Axiom (Handbook / Ops
+  Reference). Mutable agent session memory is a different lifecycle and a
+  separate future decision. Mneme holds **captured research with provenance**
+  — documents with a `source_url` and `captured_at`. See `AGENTS.md`
+  boundary 5.
 
 ## Run
 
