@@ -14,7 +14,7 @@ Axiom and not part of the Vellum asset pipeline.
 | --- | --- | --- |
 | **Library API** | Open read (list/search/get document + attachment bytes) | Primary — the durable, agent-facing contract |
 | **Ingestion API** | Token-gated write (create/update/delete document, upload attachment) | Fed by external capture agents; never a crawler |
-| **Vault store** | Markdown + attachments + index under `/mnt/data/vault/mneme` | Durable source of truth for research bytes |
+| **Vault store** | Markdown + attachments + index under `/mnt/data/vault/mneme` | Durable source of truth for library bytes (research and plans) |
 | **Operator UI** | Browse/search library, manual upload | Thin; consumes Axiom effective settings for chrome |
 
 ## What lives where

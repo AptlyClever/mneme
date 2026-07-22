@@ -38,6 +38,31 @@ ATTACHMENTS_DIR = "attachments"
 STAGING_DIR = ".staging"
 MANIFEST_SCHEMA_VERSION = 1
 
+# Constrained document-purpose discriminator. Existing manifests that omit the
+# field are treated as research (the historical default) without rewriting disk.
+DOCUMENT_FUNCTIONS = frozenset({"research", "plan"})
+DEFAULT_DOCUMENT_FUNCTION = "research"
+
+_METADATA_KEYS = (
+    "project_id",
+    "title",
+    "function",
+    "author",
+    "publisher",
+    "published_at",
+    "source_url",
+    "captured_at",
+    "tags",
+)
+
+
+def effective_document_function(manifest: dict[str, Any]) -> str:
+    """Return the document function, defaulting missing values to research."""
+    value = manifest.get("function")
+    if value in DOCUMENT_FUNCTIONS:
+        return value
+    return DEFAULT_DOCUMENT_FUNCTION
+
 _DOC_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ ()\[\]-]*$")
 # Windows-reserved device names (case-insensitive, with or without extension).
@@ -262,13 +287,11 @@ class DocumentStore:
             "created_at": now,
             "updated_at": now,
             "attachments": attachment_entries,
-            **{k: metadata.get(k) for k in (
-                "project_id", "title", "author", "publisher",
-                "published_at", "source_url", "captured_at", "tags",
-            )},
+            **{k: metadata.get(k) for k in _METADATA_KEYS},
         }
         if not manifest.get("captured_at"):
             manifest["captured_at"] = now
+        manifest["function"] = effective_document_function(manifest)
         manifest["tags"] = list(manifest.get("tags") or [])
 
         staging = self._staging / doc_id
@@ -296,12 +319,10 @@ class DocumentStore:
         doc = self._require_doc_dir(doc_id)
         manifest = self.read_manifest(doc_id)
         if metadata:
-            for key in (
-                "project_id", "title", "author", "publisher",
-                "published_at", "source_url", "captured_at", "tags",
-            ):
+            for key in _METADATA_KEYS:
                 if key in metadata:
                     manifest[key] = metadata[key]
+            manifest["function"] = effective_document_function(manifest)
             manifest["tags"] = list(manifest.get("tags") or [])
         if body is not None:
             _atomic_write_bytes(doc / BODY_NAME, body.encode("utf-8"))
@@ -379,13 +400,15 @@ class DocumentStore:
         query: Optional[str] = None,
         project_id: Optional[str] = None,
         tag: Optional[str] = None,
+        function: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[int, list[dict[str, Any]]]:
-        """Search title/body/tags, optionally filtered by project and tag.
+        """Search title/body/tags, optionally filtered by project, tag, function.
 
         Returns ``(total_matches, page_of_manifests)`` ordered by
-        ``captured_at`` descending.
+        ``captured_at`` descending. Manifests missing ``function`` match
+        ``research``.
         """
         needle = (query or "").strip().lower()
         matches: list[dict[str, Any]] = []
@@ -395,6 +418,11 @@ class DocumentStore:
             except (DocumentNotFound, json.JSONDecodeError):
                 continue
             if project_id is not None and manifest.get("project_id") != project_id:
+                continue
+            if (
+                function is not None
+                and effective_document_function(manifest) != function
+            ):
                 continue
             tags = [str(t) for t in (manifest.get("tags") or [])]
             if tag is not None and tag not in tags:

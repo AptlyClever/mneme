@@ -121,6 +121,7 @@ def test_create_document_layout_and_manifest(store: DocumentStore):
     on_disk = json.loads((doc_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
     assert on_disk["project_id"] == "proj-a"
     assert on_disk["title"] == "Test Title"
+    assert on_disk["function"] == "research"
     assert on_disk["tags"] == ["ml", "notes"]
     assert on_disk["source_url"] == "https://example.com/paper"
     (entry,) = on_disk["attachments"]
@@ -137,6 +138,25 @@ def test_captured_at_defaults_to_now(store: DocumentStore):
     manifest = store.create_document({"project_id": "p", "title": "t"}, "b")
     assert manifest["captured_at"]
     assert manifest["captured_at"] == manifest["created_at"]
+    assert manifest["function"] == "research"
+
+
+def test_create_persists_plan_function(store: DocumentStore):
+    manifest = store.create_document(
+        {"project_id": "axiom", "title": "Plan", "function": "plan"},
+        "# Plan body",
+    )
+    assert manifest["function"] == "plan"
+    assert store.read_manifest(manifest["id"])["function"] == "plan"
+
+
+def test_update_preserves_and_changes_function(store: DocumentStore):
+    doc_id = make_doc(store)["id"]
+    preserved = store.update_document(doc_id, metadata={"title": "Still research"})
+    assert preserved["function"] == "research"
+    changed = store.update_document(doc_id, metadata={"function": "plan"})
+    assert changed["function"] == "plan"
+    assert store.read_manifest(doc_id)["function"] == "plan"
 
 
 def test_duplicate_attachment_names_rejected_on_create(store: DocumentStore):
@@ -271,6 +291,28 @@ def test_search_by_title_body_tags_and_project(store: DocumentStore):
 
     total, items = store.search(query="no-such-term-anywhere")
     assert total == 0 and items == []
+
+
+def test_search_filters_by_function(store: DocumentStore):
+    research = make_doc(store, metadata={"title": "R", "project_id": "axiom"})
+    plan = make_doc(
+        store,
+        metadata={"title": "P", "project_id": "axiom", "function": "plan"},
+    )
+    other = make_doc(
+        store,
+        metadata={"title": "Other plan", "project_id": "bandit", "function": "plan"},
+    )
+
+    total, items = store.search(function="plan")
+    assert total == 2
+    assert {m["id"] for m in items} == {plan["id"], other["id"]}
+
+    total, items = store.search(project_id="axiom", function="plan")
+    assert [m["id"] for m in items] == [plan["id"]]
+
+    total, items = store.search(function="research")
+    assert [m["id"] for m in items] == [research["id"]]
 
 
 def test_search_pagination_and_ordering(store: DocumentStore):

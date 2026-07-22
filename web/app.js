@@ -22,7 +22,11 @@ function formatDate(value) {
 }
 
 function metadataLine(doc) {
+  const functionLabel = doc.function && doc.function !== "research"
+    ? doc.function.toUpperCase()
+    : null;
   return [
+    functionLabel,
     doc.author,
     doc.publisher,
     formatDate(doc.published_at || doc.captured_at),
@@ -54,12 +58,21 @@ function renderList(items) {
     const title = document.createElement("h2");
     title.textContent = doc.title;
     const meta = document.createElement("p");
-    meta.textContent = metadataLine(doc) || "Captured research";
+    meta.textContent = metadataLine(doc) || (doc.function === "plan" ? "Authored plan" : "Captured research");
     copy.append(title, meta);
+    const badges = document.createElement("span");
+    badges.className = "item-badges";
+    if (doc.function && doc.function !== "research") {
+      const fn = document.createElement("span");
+      fn.className = "function-label";
+      fn.textContent = doc.function;
+      badges.append(fn);
+    }
     const project = document.createElement("span");
     project.className = "project-label";
     project.textContent = doc.project_id;
-    button.append(copy, project);
+    badges.append(project);
+    button.append(copy, badges);
     button.addEventListener("click", () => openDocument(doc.id));
     item.append(button);
     list.append(item);
@@ -71,9 +84,11 @@ async function refresh() {
   const q = $("search").value.trim();
   const project = $("project-filter").value.trim();
   const tag = $("tag-filter").value.trim();
+  const fn = $("function-filter").value.trim();
   if (q) params.set("q", q);
   if (project) params.set("project_id", project);
   if (tag) params.set("tag", tag);
+  if (fn) params.set("function", fn);
   try {
     const data = await fetchJson(`/api/documents?${params}`);
     renderList(data.items);
@@ -97,7 +112,9 @@ async function checkHealth() {
 
 async function openDocument(id) {
   const doc = await fetchJson(`/api/documents/${encodeURIComponent(id)}`);
-  $("reader-project").textContent = doc.project_id;
+  $("reader-project").textContent = doc.function && doc.function !== "research"
+    ? `${doc.project_id} · ${doc.function}`
+    : doc.project_id;
   $("reader-title").textContent = doc.title;
   $("reader-meta").textContent = metadataLine(doc);
   $("reader-body").textContent = doc.body;
@@ -131,6 +148,7 @@ for (const id of ["search", "project-filter", "tag-filter"]) {
     debounceTimer = setTimeout(refresh, 180);
   });
 }
+$("function-filter").addEventListener("change", refresh);
 
 const dialog = $("ingest-dialog");
 $("new-document").addEventListener("click", () => dialog.showModal());
@@ -145,6 +163,7 @@ $("ingest-form").addEventListener("submit", async (event) => {
   const metadata = {
     title: String(values.get("title") || "").trim(),
     project_id: String(values.get("project_id") || "").trim(),
+    function: String(values.get("function") || "research").trim() || "research",
     source_url: String(values.get("source_url") || "").trim() || null,
     author: String(values.get("author") || "").trim() || null,
     publisher: String(values.get("publisher") || "").trim() || null,

@@ -120,6 +120,7 @@ def test_create_document_full(client: TestClient, auth):
     assert resp.status_code == 201, resp.text
     doc = resp.json()
     assert doc["project_id"] == "research-x"
+    assert doc["function"] == "research"
     assert doc["title"] == "Attention Is All You Need"
     assert doc["author"] == "Vaswani et al."
     assert doc["publisher"] == "NeurIPS"
@@ -142,6 +143,28 @@ def test_create_minimal_document(client: TestClient, auth):
     assert doc["body"] == ""
     assert doc["attachments"] == []
     assert doc["captured_at"]  # defaulted server-side
+    assert doc["function"] == "research"
+
+
+def test_create_plan_without_source_url(client: TestClient, auth):
+    resp = create_doc(
+        client,
+        auth,
+        project_id="axiom",
+        function="plan",
+        title="Authored plan",
+        author="Control Alt",
+        publisher="Control Alt",
+        source_url=None,
+        tags=["integration-plan"],
+        body="# Plan\n\nForward-looking design.",
+    )
+    assert resp.status_code == 201, resp.text
+    doc = resp.json()
+    assert doc["function"] == "plan"
+    assert doc["source_url"] is None
+    assert doc["project_id"] == "axiom"
+    assert doc["tags"] == ["integration-plan"]
 
 
 @pytest.mark.parametrize(
@@ -153,6 +176,7 @@ def test_create_minimal_document(client: TestClient, auth):
         json.dumps({"project_id": "../evil", "title": "t"}),
         json.dumps({"project_id": "p", "title": "t", "source_url": "ftp://x"}),
         json.dumps({"project_id": "p", "title": "t", "unknown_field": 1}),
+        json.dumps({"project_id": "p", "title": "t", "function": "doctrine"}),
     ],
 )
 def test_create_rejects_invalid_metadata(client: TestClient, auth, metadata):
@@ -254,15 +278,31 @@ def test_patch_metadata_and_body(client: TestClient, auth):
     doc_id = create_doc(client, auth, tags=["old"]).json()["id"]
     resp = client.patch(
         f"/documents/{doc_id}",
-        json={"title": "Renamed", "tags": ["new", "new", " x "], "body": "updated"},
+        json={
+            "title": "Renamed",
+            "function": "plan",
+            "tags": ["new", "new", " x "],
+            "body": "updated",
+        },
         headers=auth,
     )
     assert resp.status_code == 200
     doc = resp.json()
     assert doc["title"] == "Renamed"
+    assert doc["function"] == "plan"
     assert doc["tags"] == ["new", "x"]  # deduped and stripped
     assert doc["body"] == "updated"
     assert doc["project_id"] == "proj-a"  # untouched
+
+
+def test_patch_preserves_function_when_omitted(client: TestClient, auth):
+    doc_id = create_doc(client, auth, function="plan").json()["id"]
+    resp = client.patch(
+        f"/documents/{doc_id}", json={"title": "Still a plan"}, headers=auth
+    )
+    assert resp.status_code == 200
+    assert resp.json()["function"] == "plan"
+    assert resp.json()["title"] == "Still a plan"
 
 
 def test_patch_body_only(client: TestClient, auth):
@@ -329,6 +369,7 @@ def test_list_search_and_pagination(client: TestClient, auth):
     assert data["total"] == 3
     assert [d["id"] for d in data["items"]] == list(reversed(ids))  # newest first
     assert "body" not in data["items"][0]  # summaries omit the body
+    assert data["items"][0]["function"] == "research"
 
     assert client.get("/documents", params={"q": "beta"}).json()["total"] == 1
     assert client.get("/documents", params={"q": "body 2"}).json()["total"] == 1
@@ -345,6 +386,79 @@ def test_list_search_and_pagination(client: TestClient, auth):
 
     assert client.get("/documents", params={"limit": 0}).status_code == 422
     assert client.get("/documents", params={"offset": -1}).status_code == 422
+
+
+def test_list_filter_by_function(client: TestClient, auth, vault_root: Path):
+    research_id = create_doc(
+        client, auth, project_id="axiom", title="Research note"
+    ).json()["id"]
+    plan_id = create_doc(
+        client,
+        auth,
+        project_id="axiom",
+        function="plan",
+        title="Cue plan",
+        source_url=None,
+    ).json()["id"]
+    other_plan = create_doc(
+        client,
+        auth,
+        project_id="bandit",
+        function="plan",
+        title="Other plan",
+    ).json()["id"]
+
+    # Legacy manifest without function behaves as research.
+    from backend.store import DocumentStore, MANIFEST_NAME, new_doc_id
+
+    legacy_id = new_doc_id()
+    legacy_dir = vault_root / legacy_id
+    legacy_dir.mkdir()
+    (legacy_dir / "body.md").write_text("legacy research", encoding="utf-8")
+    (legacy_dir / MANIFEST_NAME).write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "id": legacy_id,
+                "project_id": "axiom",
+                "title": "Legacy doc",
+                "created_at": "2025-01-01T00:00:00Z",
+                "updated_at": "2025-01-01T00:00:00Z",
+                "captured_at": "2025-01-01T00:00:00Z",
+                "tags": [],
+                "attachments": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert DocumentStore(vault_root).read_manifest(legacy_id).get("function") is None
+
+    plans = client.get("/documents", params={"function": "plan"}).json()
+    assert {d["id"] for d in plans["items"]} == {plan_id, other_plan}
+    assert all(d["function"] == "plan" for d in plans["items"])
+
+    research = client.get("/documents", params={"function": "research"}).json()
+    assert {d["id"] for d in research["items"]} == {research_id, legacy_id}
+    assert all(d["function"] == "research" for d in research["items"])
+
+    scoped = client.get(
+        "/documents", params={"project_id": "axiom", "function": "plan"}
+    ).json()
+    assert [d["id"] for d in scoped["items"]] == [plan_id]
+
+    assert client.get("/documents", params={"function": "doctrine"}).status_code == 422
+
+
+def test_operator_ui_exposes_function_controls(client: TestClient):
+    page = client.get("/")
+    assert page.status_code == 200
+    assert 'id="function-filter"' in page.text
+    assert 'name="function"' in page.text
+    assert "value=\"plan\"" in page.text
+    js = client.get("/static/app.js")
+    assert js.status_code == 200
+    assert 'params.set("function"' in js.text
+    assert "function:" in js.text
 
 
 # -- upload limits ------------------------------------------------------------

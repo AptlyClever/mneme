@@ -42,9 +42,11 @@ its first consumer, but Mneme belongs to no single product.
 - **Not doctrine, not agent memory.** Canonical authored docs (how-we-work,
   runbooks, standards) live in git and render in Axiom (Handbook / Ops
   Reference). Mutable agent session memory is a different lifecycle and a
-  separate future decision. Mneme holds **captured research with provenance**
-  — documents with a `source_url` and `captured_at`. See `AGENTS.md`
-  boundary 5.
+  separate future decision. Mneme holds **captured research**
+  (`function: research`, typically with `source_url` and `captured_at`) and a
+  small set of **authored plans** (`function: plan`, may omit `source_url`).
+  See `AGENTS.md` boundary 5 and `PRODUCT.md` for the document-function
+  contract.
 
 ## Run
 

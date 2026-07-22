@@ -24,12 +24,30 @@ Mneme gives that research a **permanent home** that is:
 
 | Object | What it is |
 | --- | --- |
-| **Document** | A markdown body stored with a machine-readable manifest (title, tags, source, project association, timestamps). The primary unit. |
+| **Document** | A markdown body stored with a machine-readable manifest (title, tags, source, project association, document function, timestamps). The primary unit. |
 | **Attachment** | A file (image, PDF, captured page, data export) linked to exactly one document and stored beside it in the vault. |
 | **Collection / tags** | Lightweight grouping so consumers can scope reads (e.g. `bandit`, `ui`, `protocol`) without Mneme owning any project's schema. |
+| **Document function** | A small constrained purpose discriminator on each document (`research` or `plan` in v1). Exact-filterable via the API; not a substitute for tags. |
 
 Documents reference attachments by stable id/URL; attachments never float free
 of a document.
+
+### Document function
+
+`function` answers *what kind of durable artifact this is*, not which topic it
+covers:
+
+| Value | Meaning | Provenance expectation |
+| --- | --- | --- |
+| `research` (default) | Externally captured, citable research | Prefer a real `source_url` and `captured_at` |
+| `plan` | Internally authored forward-looking plan | May omit `source_url`; still durable and versionable |
+
+Existing manifests that omit `function` are treated as `research` without a
+vault rewrite. Do not use tags as a substitute for this field. Additional
+functions may be added deliberately later; this is not an open ontology.
+
+`plan` is still Mneme content — not Axiom Handbook doctrine and not mutable
+agent memory. See `AGENTS.md` boundary 5 for the broader provenance line.
 
 ## First consumer: Bandit (no project ownership)
 

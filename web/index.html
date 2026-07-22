@@ -45,6 +45,14 @@
             <span>Tag</span>
             <input id="tag-filter" type="text" placeholder="Any tag" />
           </label>
+          <label>
+            <span>Function</span>
+            <select id="function-filter">
+              <option value="">All functions</option>
+              <option value="research">research</option>
+              <option value="plan">plan</option>
+            </select>
+          </label>
           <div class="library-state">
             <span id="count">Loading…</span>
             <span id="health" class="status">Checking vault</span>
@@ -79,14 +87,21 @@
         <header>
           <div>
             <p class="eyebrow">Write to shared memory</p>
-            <h2>Add a research document</h2>
+            <h2>Add a document</h2>
           </div>
           <button id="close-dialog" class="icon-button" type="button" aria-label="Close">×</button>
         </header>
         <div class="form-grid">
           <label><span>Title</span><input name="title" required maxlength="500" /></label>
           <label><span>Project</span><input name="project_id" required placeholder="bandit" /></label>
-          <label class="wide"><span>Source URL</span><input name="source_url" type="url" placeholder="https://…" /></label>
+          <label>
+            <span>Function</span>
+            <select name="function">
+              <option value="research" selected>research</option>
+              <option value="plan">plan</option>
+            </select>
+          </label>
+          <label class="wide"><span>Source URL</span><input name="source_url" type="url" placeholder="https://… (research provenance; omit for authored plans)" /></label>
           <label><span>Author</span><input name="author" /></label>
           <label><span>Publisher</span><input name="publisher" /></label>
           <label class="wide"><span>Tags</span><input name="tags" placeholder="slots, market-research" /></label>

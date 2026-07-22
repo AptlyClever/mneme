@@ -43,8 +43,12 @@ write API for ingestion. It is a standalone leaf, not part of Axiom or Vellum.
      never here. If a document has no external source and we *assert* it as
      truth, it is doctrine, not research.
    - **Captured-from-outside** (has a `source_url`, an author who isn't us,
-     a `captured_at`) belongs in Mneme. Research is citable and durable; it
-     accumulates and is never silently rewritten.
+     a `captured_at`) belongs in Mneme as `function: research`. Research is
+     citable and durable; it accumulates and is never silently rewritten.
+   - **Internally authored plans** (`function: plan`) are a deliberate Mneme
+     document class: forward-looking design that is durable and filterable,
+     but not Handbook doctrine and not an external capture. They may omit
+     `source_url`.
    - **Mutable agent working memory** (session state, learned preferences,
      scratch recall that gets overwritten or expires) is a *different
      lifecycle* and is **not** a v1 Mneme use. If agent memory becomes a real

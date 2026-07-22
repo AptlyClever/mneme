@@ -20,7 +20,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from fastapi import (
     APIRouter,
@@ -41,6 +41,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from . import __version__
 from .store import (
+    DEFAULT_DOCUMENT_FUNCTION,
     AttachmentAlreadyExists,
     AttachmentIn,
     AttachmentNotFound,
@@ -48,6 +49,7 @@ from .store import (
     DocumentStore,
     InvalidDocumentId,
     InvalidFilename,
+    effective_document_function,
 )
 
 DEFAULT_VAULT_ROOT = "./data/vault"
@@ -93,6 +95,9 @@ def load_settings() -> Settings:
 # ---------------------------------------------------------------------------
 
 
+DocumentFunction = Literal["research", "plan"]
+
+
 def _validate_source_url(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
@@ -117,6 +122,11 @@ def _normalize_tags(tags: list[str]) -> list[str]:
     return cleaned
 
 
+def _manifest_for_response(manifest: dict) -> dict:
+    """Ensure responses always expose an effective document function."""
+    return {**manifest, "function": effective_document_function(manifest)}
+
+
 class DocumentMetadata(BaseModel):
     """Metadata supplied when creating a document."""
 
@@ -124,6 +134,7 @@ class DocumentMetadata(BaseModel):
 
     project_id: str = Field(pattern=_PROJECT_ID_PATTERN)
     title: str = Field(min_length=1, max_length=500)
+    function: DocumentFunction = DEFAULT_DOCUMENT_FUNCTION
     author: Optional[str] = Field(default=None, max_length=500)
     publisher: Optional[str] = Field(default=None, max_length=500)
     published_at: Optional[datetime] = None
@@ -154,6 +165,7 @@ class DocumentPatch(BaseModel):
 
     project_id: Optional[str] = Field(default=None, pattern=_PROJECT_ID_PATTERN)
     title: Optional[str] = Field(default=None, min_length=1, max_length=500)
+    function: Optional[DocumentFunction] = None
     author: Optional[str] = Field(default=None, max_length=500)
     publisher: Optional[str] = Field(default=None, max_length=500)
     published_at: Optional[datetime] = None
@@ -186,6 +198,7 @@ class DocumentSummary(BaseModel):
     id: str
     project_id: Optional[str] = None
     title: Optional[str] = None
+    function: DocumentFunction = DEFAULT_DOCUMENT_FUNCTION
     author: Optional[str] = None
     publisher: Optional[str] = None
     published_at: Optional[str] = None
@@ -349,17 +362,26 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         q: Optional[str] = Query(default=None, max_length=500),
         project_id: Optional[str] = Query(default=None, max_length=128),
         tag: Optional[str] = Query(default=None, max_length=100),
+        function: Optional[DocumentFunction] = Query(default=None),
         limit: int = Query(default=50, ge=1, le=500),
         offset: int = Query(default=0, ge=0),
     ) -> DocumentList:
         total, manifests = store.search(
-            query=q, project_id=project_id, tag=tag, limit=limit, offset=offset
+            query=q,
+            project_id=project_id,
+            tag=tag,
+            function=function,
+            limit=limit,
+            offset=offset,
         )
         return DocumentList(
             total=total,
             limit=limit,
             offset=offset,
-            items=[DocumentSummary.model_validate(m) for m in manifests],
+            items=[
+                DocumentSummary.model_validate(_manifest_for_response(m))
+                for m in manifests
+            ],
         )
 
     @router.get("/documents/{doc_id}", response_model=DocumentDetail)
@@ -369,7 +391,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     ) -> DocumentDetail:
         manifest = store.read_manifest(doc_id)
         return DocumentDetail.model_validate(
-            {**manifest, "body": store.read_body(doc_id)}
+            {**_manifest_for_response(manifest), "body": store.read_body(doc_id)}
         )
 
     @router.get("/documents/{doc_id}/attachments/{filename}")
@@ -426,7 +448,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         manifest = store.create_document(
             meta.model_dump(mode="json"), body, files
         )
-        return DocumentDetail.model_validate({**manifest, "body": body})
+        return DocumentDetail.model_validate(
+            {**_manifest_for_response(manifest), "body": body}
+        )
 
     @router.patch(
         "/documents/{doc_id}",
@@ -453,7 +477,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             )
         manifest = store.update_document(doc_id, metadata=provided, body=body)
         return DocumentDetail.model_validate(
-            {**manifest, "body": store.read_body(doc_id)}
+            {
+                **_manifest_for_response(manifest),
+                "body": store.read_body(doc_id),
+            }
         )
 
     @router.post(
@@ -477,7 +504,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         files = await _collect_attachments(attachments, cfg.max_upload_bytes)
         manifest = store.add_attachments(doc_id, files, overwrite=overwrite)
         return DocumentDetail.model_validate(
-            {**manifest, "body": store.read_body(doc_id)}
+            {
+                **_manifest_for_response(manifest),
+                "body": store.read_body(doc_id),
+            }
         )
 
     @router.delete(
