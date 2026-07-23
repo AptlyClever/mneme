@@ -1,6 +1,8 @@
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "mneme.writeToken";
 let debounceTimer;
+let currentDocId = null;
+let dialogMode = "create";
 
 function loadToken() {
   try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; }
@@ -11,6 +13,10 @@ function rememberToken(token) {
     if (token) localStorage.setItem(TOKEN_KEY, token);
     else localStorage.removeItem(TOKEN_KEY);
   } catch { /* private storage may be unavailable */ }
+}
+
+function hasToken() {
+  return !!loadToken();
 }
 
 function formatDate(value) {
@@ -111,13 +117,14 @@ async function checkHealth() {
 }
 
 async function openDocument(id) {
+  currentDocId = id;
   const doc = await fetchJson(`/api/documents/${encodeURIComponent(id)}`);
   $("reader-project").textContent = doc.function && doc.function !== "research"
     ? `${doc.project_id} · ${doc.function}`
     : doc.project_id;
   $("reader-title").textContent = doc.title;
   $("reader-meta").textContent = metadataLine(doc);
-  $("reader-body").textContent = doc.body;
+  $("reader-body").innerHTML = DOMPurify.sanitize(marked.parse(doc.body || ""));
 
   const list = $("attachments");
   list.replaceChildren();
@@ -132,15 +139,74 @@ async function openDocument(id) {
     list.append(item);
   }
   $("attachments-section").hidden = !doc.attachments?.length;
+  $("reader-actions").hidden = !hasToken();
   $("document-list").parentElement.hidden = true;
   $("reader").hidden = false;
   $("reader").focus();
 }
 
-$("close-reader").addEventListener("click", () => {
+function closeReader() {
+  currentDocId = null;
   $("reader").hidden = true;
   $("document-list").parentElement.hidden = false;
-});
+}
+
+function resetDialogToCreate() {
+  dialogMode = "create";
+  $("dialog-title").textContent = "Add a document";
+  $("submit-button").textContent = "Store in Mneme";
+  $("attachments-field").hidden = false;
+  $("ingest-form").reset();
+  $("write-token").value = loadToken();
+  $("ingest-status").textContent = "";
+}
+
+function openEditDialog() {
+  if (!currentDocId) return;
+  fetchJson(`/api/documents/${encodeURIComponent(currentDocId)}`).then((doc) => {
+    dialogMode = "edit";
+    $("dialog-title").textContent = "Edit document";
+    $("submit-button").textContent = "Save changes";
+    $("attachments-field").hidden = true;
+    const form = $("ingest-form");
+    form.title.value = doc.title || "";
+    form.project_id.value = doc.project_id || "";
+    form.function.value = doc.function || "research";
+    form.source_url.value = doc.source_url || "";
+    form.author.value = doc.author || "";
+    form.publisher.value = doc.publisher || "";
+    form.tags.value = (doc.tags || []).join(", ");
+    form.body.value = doc.body || "";
+    $("write-token").value = loadToken();
+    $("ingest-status").textContent = "";
+    $("ingest-dialog").showModal();
+  });
+}
+
+function deleteDocument() {
+  if (!currentDocId) return;
+  if (!confirm("Delete this document? This cannot be undone.")) return;
+  const token = loadToken();
+  const status = $("ingest-status");
+  fetchJson(`/api/documents/${encodeURIComponent(currentDocId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(() => {
+    closeReader();
+    refresh();
+  }).catch((error) => {
+    if (error.status === 403) {
+      rememberToken("");
+      $("write-token").value = "";
+      $("reader-actions").hidden = true;
+    }
+    alert(`Delete failed: ${error.message}`);
+  });
+}
+
+$("close-reader").addEventListener("click", closeReader);
+$("edit-document").addEventListener("click", openEditDialog);
+$("delete-document").addEventListener("click", deleteDocument);
 
 for (const id of ["search", "project-filter", "tag-filter"]) {
   $(id).addEventListener("input", () => {
@@ -151,7 +217,10 @@ for (const id of ["search", "project-filter", "tag-filter"]) {
 $("function-filter").addEventListener("change", refresh);
 
 const dialog = $("ingest-dialog");
-$("new-document").addEventListener("click", () => dialog.showModal());
+$("new-document").addEventListener("click", () => {
+  resetDialogToCreate();
+  dialog.showModal();
+});
 $("close-dialog").addEventListener("click", () => dialog.close());
 $("write-token").value = loadToken();
 
@@ -169,31 +238,49 @@ $("ingest-form").addEventListener("submit", async (event) => {
     publisher: String(values.get("publisher") || "").trim() || null,
     tags: String(values.get("tags") || "").split(",").map((tag) => tag.trim()).filter(Boolean),
   };
-  const payload = new FormData();
-  payload.set("metadata", JSON.stringify(metadata));
-  payload.set("body", String(values.get("body") || ""));
-  for (const file of values.getAll("attachments")) {
-    if (file instanceof File && file.size) payload.append("attachments", file);
-  }
 
   const status = $("ingest-status");
-  status.textContent = "Storing…";
   try {
-    await fetchJson("/api/documents", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: payload,
-    });
-    rememberToken(token);
-    form.reset();
-    $("write-token").value = token;
-    status.textContent = "Stored.";
-    dialog.close();
-    await refresh();
+    if (dialogMode === "edit" && currentDocId) {
+      status.textContent = "Saving…";
+      await fetchJson(`/api/documents/${encodeURIComponent(currentDocId)}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ...metadata, body: String(values.get("body") || "") }),
+      });
+      rememberToken(token);
+      status.textContent = "Saved.";
+      dialog.close();
+      await openDocument(currentDocId);
+      await refresh();
+    } else {
+      status.textContent = "Storing…";
+      const payload = new FormData();
+      payload.set("metadata", JSON.stringify(metadata));
+      payload.set("body", String(values.get("body") || ""));
+      for (const file of values.getAll("attachments")) {
+        if (file instanceof File && file.size) payload.append("attachments", file);
+      }
+      await fetchJson("/api/documents", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: payload,
+      });
+      rememberToken(token);
+      form.reset();
+      $("write-token").value = token;
+      status.textContent = "Stored.";
+      dialog.close();
+      await refresh();
+    }
   } catch (error) {
     if (error.status === 403) {
       rememberToken("");
       $("write-token").value = "";
+      $("reader-actions").hidden = true;
     }
     status.textContent = `Failed: ${error.message}`;
   }

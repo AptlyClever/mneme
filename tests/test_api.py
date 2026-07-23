@@ -212,6 +212,26 @@ def test_get_malformed_doc_id_400(client: TestClient):
     assert "invalid document id" in resp.json()["detail"]
 
 
+def test_get_document_etag(client: TestClient, auth):
+    doc_id = create_doc(client, auth, body="content").json()["id"]
+    resp = client.get(f"/documents/{doc_id}")
+    assert resp.status_code == 200
+    etag = resp.headers.get("etag")
+    assert etag is not None
+    assert etag.startswith('"') and etag.endswith('"')
+
+    resp2 = client.get(f"/documents/{doc_id}", headers={"If-None-Match": etag})
+    assert resp2.status_code == 304
+
+    resp3 = client.get(f"/documents/{doc_id}", headers={"If-None-Match": '"wrong"'})
+    assert resp3.status_code == 200
+
+    client.patch(f"/documents/{doc_id}", json={"title": "Updated"}, headers=auth)
+    resp4 = client.get(f"/documents/{doc_id}", headers={"If-None-Match": etag})
+    assert resp4.status_code == 200
+    assert resp4.headers.get("etag") != etag
+
+
 # -- attachments --------------------------------------------------------------
 
 
@@ -225,6 +245,18 @@ def test_fetch_attachment_content_and_headers(client: TestClient, auth):
     assert resp.content == data
     assert resp.headers["content-type"].startswith("text/csv")
     assert resp.headers["etag"] == f'"{hashlib.sha256(data).hexdigest()}"'
+
+
+def test_fetch_attachment_corrupted_returns_500(client: TestClient, auth, vault_root):
+    data = b"original bytes"
+    doc_id = create_doc(
+        client, auth, attachments=[("file.txt", data, "text/plain")]
+    ).json()["id"]
+    att_path = vault_root / doc_id / "attachments" / "file.txt"
+    att_path.write_bytes(b"corrupted")
+    resp = client.get(f"/documents/{doc_id}/attachments/file.txt")
+    assert resp.status_code == 500
+    assert "checksum mismatch" in resp.json()["detail"]
 
 
 def test_fetch_attachment_traversal_blocked(client: TestClient, auth):

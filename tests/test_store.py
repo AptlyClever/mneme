@@ -12,6 +12,7 @@ from backend.store import (
     MANIFEST_NAME,
     STAGING_DIR,
     AttachmentAlreadyExists,
+    AttachmentCorrupted,
     AttachmentIn,
     AttachmentNotFound,
     DocumentNotFound,
@@ -250,6 +251,19 @@ def test_missing_attachment(store: DocumentStore):
         store.get_attachment(doc_id, "nope.txt")
 
 
+def test_attachment_integrity_check(store: DocumentStore):
+    data = b"original content"
+    doc_id = make_doc(
+        store, attachments=[AttachmentIn("file.txt", data, "text/plain")]
+    )["id"]
+    path, entry = store.get_attachment(doc_id, "file.txt")
+    assert path.read_bytes() == data
+
+    path.write_bytes(b"corrupted content")
+    with pytest.raises(AttachmentCorrupted):
+        store.get_attachment(doc_id, "file.txt")
+
+
 # -- delete -------------------------------------------------------------------
 
 
@@ -336,3 +350,33 @@ def test_search_pagination_and_ordering(store: DocumentStore):
 
     total, page = store.search(limit=2, offset=4)
     assert [m["id"] for m in page] == [ids[0]]
+
+
+def test_search_multi_term_and_logic(store: DocumentStore):
+    a = make_doc(store, metadata={"title": "Real machine gaps analysis"})
+    b = make_doc(store, metadata={"title": "Real opportunities"}, body="machine learning")
+    c = make_doc(store, metadata={"title": "Machine only"}, body="no relevant content")
+    d = make_doc(store, metadata={"title": "Something else"}, body="nothing relevant here")
+
+    total, items = store.search(query="real machine")
+    assert total == 2
+    assert {m["id"] for m in items} == {a["id"], b["id"]}
+    assert c["id"] not in {m["id"] for m in items}
+    assert d["id"] not in {m["id"] for m in items}
+
+
+def test_search_field_weighting(store: DocumentStore):
+    title_match = make_doc(store, metadata={"title": "Quantum computing"})
+    tag_match = make_doc(
+        store, metadata={"title": "Something else", "tags": ["quantum"]}
+    )
+    body_match = make_doc(
+        store, metadata={"title": "Unrelated title"}, body="discusses quantum theory"
+    )
+
+    total, items = store.search(query="quantum")
+    assert total == 3
+    ids = [m["id"] for m in items]
+    assert ids[0] == title_match["id"]
+    assert ids[1] == tag_match["id"]
+    assert ids[2] == body_match["id"]

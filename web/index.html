@@ -69,7 +69,13 @@
         </section>
 
         <article id="reader" class="reader" hidden>
-          <button id="close-reader" class="text-button" type="button">← Library</button>
+          <div class="reader-toolbar">
+            <button id="close-reader" class="text-button" type="button">← Library</button>
+            <div id="reader-actions" class="reader-actions" hidden>
+              <button id="edit-document" class="text-button" type="button">Edit</button>
+              <button id="delete-document" class="text-button danger" type="button">Delete</button>
+            </div>
+          </div>
           <p id="reader-project" class="eyebrow"></p>
           <h2 id="reader-title"></h2>
           <div id="reader-meta" class="reader-meta"></div>
@@ -87,7 +93,7 @@
         <header>
           <div>
             <p class="eyebrow">Write to shared memory</p>
-            <h2>Add a document</h2>
+            <h2 id="dialog-title">Add a document</h2>
           </div>
           <button id="close-dialog" class="icon-button" type="button" aria-label="Close">×</button>
         </header>
@@ -109,7 +115,7 @@
             <span>Markdown body</span>
             <textarea name="body" required rows="14" placeholder="# Captured article…"></textarea>
           </label>
-          <label class="wide">
+          <label id="attachments-field" class="wide">
             <span>Linked attachments</span>
             <input name="attachments" type="file" multiple />
           </label>
@@ -120,11 +126,13 @@
         </div>
         <footer>
           <span id="ingest-status" role="status"></span>
-          <button class="primary" type="submit">Store in Mneme</button>
+          <button id="submit-button" class="primary" type="submit">Store in Mneme</button>
         </footer>
       </form>
     </dialog>
 
+    <script src="/static/marked.min.js"></script>
+    <script src="/static/purify.min.js"></script>
     <script src="/static/app.js" defer></script>
   </body>
 </html>

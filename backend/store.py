@@ -110,6 +110,13 @@ class AttachmentAlreadyExists(StoreError):
         self.filename = filename
 
 
+class AttachmentCorrupted(StoreError):
+    def __init__(self, doc_id: str, filename: str) -> None:
+        super().__init__(f"attachment checksum mismatch: {filename} (document {doc_id})")
+        self.doc_id = doc_id
+        self.filename = filename
+
+
 @dataclass(frozen=True)
 class AttachmentIn:
     """An attachment payload accepted by the store."""
@@ -204,6 +211,20 @@ class DocumentStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self._staging = self.root / STAGING_DIR
         self._staging.mkdir(parents=True, exist_ok=True)
+        self._doc_count = sum(1 for _ in self._iter_doc_ids_raw())
+
+    @property
+    def doc_count(self) -> int:
+        return self._doc_count
+
+    def recount(self) -> int:
+        self._doc_count = sum(1 for _ in self._iter_doc_ids_raw())
+        return self._doc_count
+
+    def _iter_doc_ids_raw(self) -> Iterable[str]:
+        for entry in os.scandir(self.root):
+            if entry.is_dir() and _DOC_ID_RE.fullmatch(entry.name):
+                yield entry.name
 
     # -- path helpers -----------------------------------------------------
 
@@ -307,6 +328,7 @@ class DocumentStore:
         except BaseException:
             shutil.rmtree(staging, ignore_errors=True)
             raise
+        self._doc_count += 1
         return manifest
 
     def update_document(
@@ -369,7 +391,11 @@ class DocumentStore:
         return manifest
 
     def get_attachment(self, doc_id: str, filename: str) -> tuple[Path, dict[str, Any]]:
-        """Return the on-disk path and manifest entry for an attachment."""
+        """Return the on-disk path and manifest entry for an attachment.
+
+        Raises :class:`AttachmentCorrupted` if the on-disk SHA-256 does not
+        match the manifest entry.
+        """
         manifest = self.read_manifest(doc_id)
         name = sanitize_filename(filename)
         entry = next(
@@ -379,6 +405,9 @@ class DocumentStore:
         path = self.attachment_path(doc_id, name)
         if entry is None or not path.is_file():
             raise AttachmentNotFound(doc_id, filename)
+        actual = sha256_hex(path.read_bytes())
+        if actual != entry.get("sha256"):
+            raise AttachmentCorrupted(doc_id, name)
         return path, entry
 
     def delete_document(self, doc_id: str) -> None:
@@ -387,13 +416,12 @@ class DocumentStore:
         trash = self._staging / f"delete-{doc_id}-{uuid.uuid4().hex}"
         os.rename(doc, trash)
         shutil.rmtree(trash, ignore_errors=True)
+        self._doc_count -= 1
 
     # -- listing / search ---------------------------------------------------
 
     def iter_doc_ids(self) -> Iterable[str]:
-        for entry in os.scandir(self.root):
-            if entry.is_dir() and _DOC_ID_RE.fullmatch(entry.name):
-                yield entry.name
+        yield from self._iter_doc_ids_raw()
 
     def search(
         self,
@@ -406,12 +434,14 @@ class DocumentStore:
     ) -> tuple[int, list[dict[str, Any]]]:
         """Search title/body/tags, optionally filtered by project, tag, function.
 
-        Returns ``(total_matches, page_of_manifests)`` ordered by
-        ``captured_at`` descending. Manifests missing ``function`` match
-        ``research``.
+        Multi-term AND: every term must appear somewhere in the document.
+        Scoring: title match = 3 pts, tag match = 2 pts, body match = 1 pt
+        per term. Results sorted by score descending, then ``captured_at``
+        descending as tiebreaker. Empty query returns all matches in date order.
         """
-        needle = (query or "").strip().lower()
-        matches: list[dict[str, Any]] = []
+        raw_query = (query or "").strip()
+        terms = raw_query.lower().split() if raw_query else []
+        scored: list[tuple[int, dict[str, Any]]] = []
         for doc_id in self.iter_doc_ids():
             try:
                 manifest = self.read_manifest(doc_id)
@@ -427,14 +457,31 @@ class DocumentStore:
             tags = [str(t) for t in (manifest.get("tags") or [])]
             if tag is not None and tag not in tags:
                 continue
-            if needle:
-                haystack = " ".join(
-                    filter(None, [str(manifest.get("title") or ""), *tags])
-                ).lower()
-                if needle not in haystack and needle not in self.read_body(doc_id).lower():
-                    continue
-            matches.append(manifest)
+            if terms:
+                title_lower = str(manifest.get("title") or "").lower()
+                tags_lower = " ".join(t.lower() for t in tags)
+                body_lower = self.read_body(doc_id).lower()
+                score = 0
+                for term in terms:
+                    term_hit = False
+                    if term in title_lower:
+                        score += 3
+                        term_hit = True
+                    if term in tags_lower:
+                        score += 2
+                        term_hit = True
+                    if term in body_lower:
+                        score += 1
+                        term_hit = True
+                    if not term_hit:
+                        break
+                else:
+                    scored.append((score, manifest))
+                continue
+            scored.append((0, manifest))
 
-        matches.sort(key=lambda m: str(m.get("captured_at") or ""), reverse=True)
+        scored.sort(key=lambda s: str(s[1].get("captured_at") or ""), reverse=True)
+        scored.sort(key=lambda s: s[0], reverse=True)
+        matches = [m for _, m in scored]
         total = len(matches)
         return total, matches[offset : offset + limit]

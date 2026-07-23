@@ -40,9 +40,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from . import __version__
+from .audit import AuditLogger
 from .store import (
     DEFAULT_DOCUMENT_FUNCTION,
     AttachmentAlreadyExists,
+    AttachmentCorrupted,
     AttachmentIn,
     AttachmentNotFound,
     DocumentNotFound,
@@ -230,6 +232,21 @@ class HealthResponse(BaseModel):
     writes_enabled: bool
 
 
+class AuditEntry(BaseModel):
+    ts: str
+    action: str
+    doc_id: Optional[str] = None
+    ip: Optional[str] = None
+    user_agent: Optional[str] = None
+
+
+class AuditList(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[AuditEntry]
+
+
 # ---------------------------------------------------------------------------
 # Dependencies
 # ---------------------------------------------------------------------------
@@ -241,6 +258,10 @@ def get_store(request: Request) -> DocumentStore:
 
 def get_settings(request: Request) -> Settings:
     return request.app.state.settings
+
+
+def get_audit(request: Request) -> AuditLogger:
+    return request.app.state.audit
 
 
 def require_write_token(
@@ -324,6 +345,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.store = DocumentStore(settings.vault_root)
+    app.state.audit = AuditLogger(settings.vault_root)
     router = APIRouter()
 
     @app.exception_handler(DocumentNotFound)
@@ -340,6 +362,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     async def _conflict(_: Request, exc: Exception) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 
+    @app.exception_handler(AttachmentCorrupted)
+    async def _corrupted(_: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse(status_code=500, content={"detail": str(exc)})
+
     # -- reads (open) -----------------------------------------------------
 
     @router.get("/health", response_model=HealthResponse)
@@ -352,8 +378,22 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             service="mneme",
             version=__version__,
             vault_root=str(store.root),
-            documents=sum(1 for _ in store.iter_doc_ids()),
+            documents=store.doc_count,
             writes_enabled=bool(cfg.write_token),
+        )
+
+    @router.get("/audit", response_model=AuditList, dependencies=[Depends(require_write_token)])
+    def list_audit(
+        audit: Annotated[AuditLogger, Depends(get_audit)],
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> AuditList:
+        total, entries = audit.read_entries(limit=limit, offset=offset)
+        return AuditList(
+            total=total,
+            limit=limit,
+            offset=offset,
+            items=[AuditEntry.model_validate(e) for e in entries],
         )
 
     @router.get("/documents", response_model=DocumentList)
@@ -386,12 +426,21 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
     @router.get("/documents/{doc_id}", response_model=DocumentDetail)
     def get_document(
+        request: Request,
         doc_id: str,
         store: Annotated[DocumentStore, Depends(get_store)],
-    ) -> DocumentDetail:
+    ) -> Response:
         manifest = store.read_manifest(doc_id)
-        return DocumentDetail.model_validate(
+        etag = f'"{manifest.get("updated_at", "")}"'
+        if_none_match = request.headers.get("if-none-match")
+        if if_none_match and if_none_match == etag:
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED)
+        detail = DocumentDetail.model_validate(
             {**_manifest_for_response(manifest), "body": store.read_body(doc_id)}
+        )
+        return JSONResponse(
+            content=detail.model_dump(mode="json"),
+            headers={"ETag": etag},
         )
 
     @router.get("/documents/{doc_id}/attachments/{filename}")
@@ -417,8 +466,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         dependencies=[Depends(require_write_token)],
     )
     async def create_document(
+        request: Request,
         store: Annotated[DocumentStore, Depends(get_store)],
         cfg: Annotated[Settings, Depends(get_settings)],
+        audit: Annotated[AuditLogger, Depends(get_audit)],
         metadata: Annotated[str, Form(description="DocumentMetadata as JSON")],
         body: Annotated[str, Form()] = "",
         attachments: Annotated[Optional[list[UploadFile]], File()] = None,
@@ -448,6 +499,12 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         manifest = store.create_document(
             meta.model_dump(mode="json"), body, files
         )
+        audit.log(
+            "create",
+            doc_id=manifest["id"],
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
         return DocumentDetail.model_validate(
             {**_manifest_for_response(manifest), "body": body}
         )
@@ -458,10 +515,12 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         dependencies=[Depends(require_write_token)],
     )
     def patch_document(
+        request: Request,
         doc_id: str,
         patch: DocumentPatch,
         store: Annotated[DocumentStore, Depends(get_store)],
         cfg: Annotated[Settings, Depends(get_settings)],
+        audit: Annotated[AuditLogger, Depends(get_audit)],
     ) -> DocumentDetail:
         provided = patch.model_dump(mode="json", include=patch.model_fields_set)
         body = provided.pop("body", None)
@@ -476,6 +535,12 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 detail="patch must include at least one field",
             )
         manifest = store.update_document(doc_id, metadata=provided, body=body)
+        audit.log(
+            "update",
+            doc_id=doc_id,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
         return DocumentDetail.model_validate(
             {
                 **_manifest_for_response(manifest),
@@ -490,9 +555,11 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         dependencies=[Depends(require_write_token)],
     )
     async def add_attachments(
+        request: Request,
         doc_id: str,
         store: Annotated[DocumentStore, Depends(get_store)],
         cfg: Annotated[Settings, Depends(get_settings)],
+        audit: Annotated[AuditLogger, Depends(get_audit)],
         attachments: Annotated[list[UploadFile], File()],
         overwrite: bool = Query(default=False),
     ) -> DocumentDetail:
@@ -503,6 +570,12 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             )
         files = await _collect_attachments(attachments, cfg.max_upload_bytes)
         manifest = store.add_attachments(doc_id, files, overwrite=overwrite)
+        audit.log(
+            "attach",
+            doc_id=doc_id,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
         return DocumentDetail.model_validate(
             {
                 **_manifest_for_response(manifest),
@@ -516,10 +589,18 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         dependencies=[Depends(require_write_token)],
     )
     def delete_document(
+        request: Request,
         doc_id: str,
         store: Annotated[DocumentStore, Depends(get_store)],
+        audit: Annotated[AuditLogger, Depends(get_audit)],
     ) -> Response:
         store.delete_document(doc_id)
+        audit.log(
+            "delete",
+            doc_id=doc_id,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     # `/api` is the canonical contract. Root aliases remain for simple LAN
