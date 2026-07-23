@@ -51,6 +51,21 @@
               <option value="">All functions</option>
               <option value="research">research</option>
               <option value="plan">plan</option>
+              <option value="synthesis">synthesis</option>
+              <option value="decision">decision</option>
+              <option value="reference">reference</option>
+              <option value="insight">insight</option>
+              <option value="preference">preference</option>
+            </select>
+          </label>
+          <label>
+            <span>Status</span>
+            <select id="status-filter">
+              <option value="">All statuses</option>
+              <option value="active">active</option>
+              <option value="draft">draft</option>
+              <option value="superseded">superseded</option>
+              <option value="archived">archived</option>
             </select>
           </label>
           <div class="library-state">
@@ -105,11 +120,37 @@
             <select name="function">
               <option value="research" selected>research</option>
               <option value="plan">plan</option>
+              <option value="synthesis">synthesis</option>
+              <option value="decision">decision</option>
+              <option value="reference">reference</option>
+              <option value="insight">insight</option>
+              <option value="preference">preference</option>
             </select>
           </label>
-          <label class="wide"><span>Source URL</span><input name="source_url" type="url" placeholder="https://… (research provenance; omit for authored plans)" /></label>
+          <label>
+            <span>Source type</span>
+            <select name="source_type">
+              <option value="human_capture" selected>human capture</option>
+              <option value="agent_synthesis">agent synthesis</option>
+              <option value="web_page">web page</option>
+              <option value="github_issue">GitHub issue</option>
+              <option value="external_document">external document</option>
+            </select>
+          </label>
+          <label class="wide"><span>Source URL</span><input name="source_url" type="url" placeholder="https://… (required for non-human research)" /></label>
+          <label id="agent-id-field"><span>Agent id</span><input name="agent_id" placeholder="bandit-discovery-agent" /></label>
+          <label id="session-id-field"><span>Session id</span><input name="session_id" placeholder="cfd-inspiration-20260719" /></label>
           <label><span>Author</span><input name="author" /></label>
           <label><span>Publisher</span><input name="publisher" /></label>
+          <label>
+            <span>Status</span>
+            <select name="status">
+              <option value="active" selected>active</option>
+              <option value="draft">draft</option>
+              <option value="superseded">superseded</option>
+              <option value="archived">archived</option>
+            </select>
+          </label>
           <label class="wide"><span>Tags</span><input name="tags" placeholder="slots, market-research" /></label>
           <label class="wide">
             <span>Markdown body</span>

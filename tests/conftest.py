@@ -39,6 +39,7 @@ def create_doc(
     *,
     project_id: str = "proj-a",
     title: str = "Sample Doc",
+    function: str = "research",
     body: str = "# Hello\n\nSome research notes.",
     tags: list[str] | None = None,
     attachments: list[tuple[str, bytes, str]] | None = None,
@@ -47,6 +48,8 @@ def create_doc(
     metadata = {
         "project_id": project_id,
         "title": title,
+        "function": function,
+        "provenance": {"source_type": "human_capture"},
         "tags": tags or [],
         **extra_metadata,
     }

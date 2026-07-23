@@ -160,6 +160,59 @@ def test_update_preserves_and_changes_function(store: DocumentStore):
     assert store.read_manifest(doc_id)["function"] == "plan"
 
 
+@pytest.mark.parametrize(
+    "function",
+    ["research", "plan", "synthesis", "decision", "reference", "insight", "preference"],
+)
+def test_create_persists_all_document_functions(store: DocumentStore, function: str):
+    manifest = store.create_document(
+        {
+            "project_id": "axiom",
+            "title": function,
+            "function": function,
+        },
+        f"# {function}",
+    )
+    assert manifest["function"] == function
+    assert store.read_manifest(manifest["id"])["function"] == function
+
+
+def test_create_persists_provenance_context_and_relationships(store: DocumentStore):
+    manifest = store.create_document(
+        {
+            "project_id": "axiom",
+            "title": "Rich doc",
+            "function": "synthesis",
+            "provenance": {
+                "source_type": "agent_synthesis",
+                "agent_id": "bandit-agent",
+                "session_id": "sess-123",
+                "confidence": 0.85,
+            },
+            "context_ids": [
+                {"type": "cfd", "id": "cfd-123"},
+                {"type": "project", "id": "bandit"},
+            ],
+            "relationships": {
+                "parent_id": "a" * 32,
+                "related_ids": ["b" * 32],
+            },
+            "status": "draft",
+            "confidence": 0.9,
+            "reviewed_by": "Travis",
+        },
+        "body",
+    )
+    on_disk = store.read_manifest(manifest["id"])
+    assert on_disk["provenance"]["source_type"] == "agent_synthesis"
+    assert on_disk["provenance"]["agent_id"] == "bandit-agent"
+    assert on_disk["context_ids"][0] == {"type": "cfd", "id": "cfd-123"}
+    assert on_disk["relationships"]["parent_id"] == "a" * 32
+    assert on_disk["status"] == "draft"
+    assert on_disk["confidence"] == 0.9
+    assert on_disk["reviewed_by"] == "Travis"
+
+
 def test_duplicate_attachment_names_rejected_on_create(store: DocumentStore):
     with pytest.raises(AttachmentAlreadyExists):
         make_doc(

@@ -31,8 +31,12 @@ function metadataLine(doc) {
   const functionLabel = doc.function && doc.function !== "research"
     ? doc.function.toUpperCase()
     : null;
+  const statusLabel = doc.status && doc.status !== "active"
+    ? doc.status
+    : null;
   return [
     functionLabel,
+    statusLabel,
     doc.author,
     doc.publisher,
     formatDate(doc.published_at || doc.captured_at),
@@ -64,7 +68,7 @@ function renderList(items) {
     const title = document.createElement("h2");
     title.textContent = doc.title;
     const meta = document.createElement("p");
-    meta.textContent = metadataLine(doc) || (doc.function === "plan" ? "Authored plan" : "Captured research");
+    meta.textContent = metadataLine(doc) || (doc.function === "plan" ? "Authored plan" : "Captured knowledge");
     copy.append(title, meta);
     const badges = document.createElement("span");
     badges.className = "item-badges";
@@ -91,10 +95,12 @@ async function refresh() {
   const project = $("project-filter").value.trim();
   const tag = $("tag-filter").value.trim();
   const fn = $("function-filter").value.trim();
+  const status = $("status-filter")?.value.trim();
   if (q) params.set("q", q);
   if (project) params.set("project_id", project);
   if (tag) params.set("tag", tag);
   if (fn) params.set("function", fn);
+  if (status) params.set("status", status);
   try {
     const data = await fetchJson(`/api/documents?${params}`);
     renderList(data.items);
@@ -151,6 +157,20 @@ function closeReader() {
   $("document-list").parentElement.hidden = false;
 }
 
+function updateProvenanceVisibility() {
+  const form = $("ingest-form");
+  const sourceType = form.source_type.value;
+  const isHuman = sourceType === "human_capture";
+  $("agent-id-field").hidden = isHuman;
+  $("session-id-field").hidden = isHuman;
+  const sourceUrlField = form.source_url.closest("label");
+  if (sourceUrlField) {
+    sourceUrlField.querySelector("span").textContent = isHuman
+      ? "Source URL (optional)"
+      : "Source URL (required for research)";
+  }
+}
+
 function resetDialogToCreate() {
   dialogMode = "create";
   $("dialog-title").textContent = "Add a document";
@@ -159,6 +179,7 @@ function resetDialogToCreate() {
   $("ingest-form").reset();
   $("write-token").value = loadToken();
   $("ingest-status").textContent = "";
+  updateProvenanceVisibility();
 }
 
 function openEditDialog() {
@@ -177,8 +198,14 @@ function openEditDialog() {
     form.publisher.value = doc.publisher || "";
     form.tags.value = (doc.tags || []).join(", ");
     form.body.value = doc.body || "";
+    form.status.value = doc.status || "active";
+    const provenance = doc.provenance || {};
+    form.source_type.value = provenance.source_type || "human_capture";
+    form.agent_id.value = provenance.agent_id || "";
+    form.session_id.value = provenance.session_id || "";
     $("write-token").value = loadToken();
     $("ingest-status").textContent = "";
+    updateProvenanceVisibility();
     $("ingest-dialog").showModal();
   });
 }
@@ -215,6 +242,9 @@ for (const id of ["search", "project-filter", "tag-filter"]) {
   });
 }
 $("function-filter").addEventListener("change", refresh);
+if ($("status-filter")) {
+  $("status-filter").addEventListener("change", refresh);
+}
 
 const dialog = $("ingest-dialog");
 $("new-document").addEventListener("click", () => {
@@ -223,20 +253,35 @@ $("new-document").addEventListener("click", () => {
 });
 $("close-dialog").addEventListener("click", () => dialog.close());
 $("write-token").value = loadToken();
+if ($("ingest-form").source_type) {
+  $("ingest-form").source_type.addEventListener("change", updateProvenanceVisibility);
+}
 
 $("ingest-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const values = new FormData(form);
   const token = String(values.get("token") || "").trim();
+  const sourceType = String(values.get("source_type") || "human_capture").trim();
+  const sourceUrl = String(values.get("source_url") || "").trim() || null;
+  const agentId = String(values.get("agent_id") || "").trim() || null;
+  const sessionId = String(values.get("session_id") || "").trim() || null;
+
   const metadata = {
     title: String(values.get("title") || "").trim(),
     project_id: String(values.get("project_id") || "").trim(),
     function: String(values.get("function") || "research").trim() || "research",
-    source_url: String(values.get("source_url") || "").trim() || null,
+    source_url: sourceUrl,
     author: String(values.get("author") || "").trim() || null,
     publisher: String(values.get("publisher") || "").trim() || null,
     tags: String(values.get("tags") || "").split(",").map((tag) => tag.trim()).filter(Boolean),
+    status: String(values.get("status") || "active").trim() || "active",
+    provenance: {
+      source_type: sourceType,
+      agent_id: agentId,
+      session_id: sessionId,
+      source_url: sourceUrl,
+    },
   };
 
   const status = $("ingest-status");

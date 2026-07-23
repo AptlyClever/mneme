@@ -15,6 +15,7 @@ Mneme never fetches URLs; ``source_url`` is stored as provenance only.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
 from dataclasses import dataclass
@@ -37,7 +38,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from . import __version__
 from .audit import AuditLogger
@@ -52,6 +53,8 @@ from .store import (
     InvalidDocumentId,
     InvalidFilename,
     effective_document_function,
+    effective_provenance,
+    is_agent_source,
 )
 
 DEFAULT_VAULT_ROOT = "./data/vault"
@@ -72,6 +75,99 @@ class Settings:
     vault_root: Path
     write_token: Optional[str]
     max_upload_bytes: int
+    hephaestus_base_url: Optional[str] = None
+    known_projects: frozenset[str] = frozenset()
+
+
+def _load_known_projects(base_url: Optional[str]) -> frozenset[str]:
+    """Fetch the Hephaestus project list to use as a canonical vocabulary.
+
+    Fail-soft: if Hephaestus is unreachable or not configured, return an empty set.
+    """
+    if not base_url:
+        return frozenset()
+    import urllib.error
+    import urllib.request
+
+    logger = logging.getLogger(__name__)
+    try:
+        req = urllib.request.Request(
+            f"{base_url.rstrip('/')}/api/projects",
+            headers={"Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        projects = data.get("projects") or data.get("items") or []
+        return frozenset(str(p.get("id")) for p in projects if p.get("id"))
+    except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as exc:
+        logger.warning("Could not load Hephaestus project list: %s", exc)
+        return frozenset()
+
+
+def _warn_unknown_project(project_id: str, known_projects: frozenset[str]) -> None:
+    if known_projects and project_id not in known_projects:
+        logging.getLogger(__name__).warning(
+            "project_id %r is not in the Hephaestus project vocabulary", project_id
+        )
+
+
+def _infer_reclassification(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Infer a new function and provenance.source_type for a legacy document."""
+    function = manifest.get("function")
+    provenance = dict(manifest.get("provenance") or {})
+    changes: dict[str, Any] = {}
+
+    # Plans stay plans and are human-authored.
+    if function == "plan":
+        if provenance.get("source_type") in (None, "unknown"):
+            provenance["source_type"] = "human_capture"
+            changes["provenance"] = provenance
+        return changes
+
+    title = str(manifest.get("title") or "").lower()
+    author = str(manifest.get("author") or "").lower()
+    source_url = manifest.get("source_url") or provenance.get("source_url")
+    attachments = manifest.get("attachments") or []
+    has_images = any(
+        a.get("filename", "").lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
+        for a in attachments
+    )
+
+    new_function: Optional[str] = None
+    source_type: Optional[str] = None
+
+    if source_url:
+        source_type = "github_issue" if "github.com" in source_url else "external_document"
+        new_function = "research"
+    elif has_images or any(kw in title for kw in ("reference", "photo", "image", "board", "dobson")):
+        source_type = "human_capture"
+        new_function = "reference"
+    elif any(kw in title for kw in ("decision", "eval", "locked", "identity packet", "directive", "mystery")):
+        source_type = "human_capture"
+        new_function = "decision"
+    elif any(kw in title for kw in ("vision", "platform", "strategy", "insight", "assessment")):
+        source_type = "human_capture"
+        new_function = "insight"
+    elif any(kw in author for kw in ("agent", "cursor", "chatgpt", "openai", "mara", "llm")):
+        source_type = "agent_synthesis"
+        new_function = "synthesis"
+    else:
+        # Conservative fallback: human-captured research so existing docs remain valid.
+        source_type = "human_capture"
+        new_function = "research"
+
+    if manifest.get("function") != new_function and new_function is not None:
+        changes["function"] = new_function
+
+    if provenance.get("source_type") in (None, "unknown"):
+        provenance["source_type"] = source_type
+    if manifest.get("source_url") and not provenance.get("source_url"):
+        provenance["source_url"] = manifest["source_url"]
+
+    if changes.get("function") or provenance != (manifest.get("provenance") or {}):
+        changes["provenance"] = provenance
+
+    return changes
 
 
 def load_settings() -> Settings:
@@ -85,10 +181,14 @@ def load_settings() -> Settings:
     if max_upload <= 0:
         raise RuntimeError("MNEME_MAX_UPLOAD_BYTES must be positive")
     token = os.environ.get("MNEME_WRITE_TOKEN", "").strip() or None
+    hephaestus_url = os.environ.get("HEPHAESTUS_BASE_URL", "").strip() or None
+    known_projects = _load_known_projects(hephaestus_url)
     return Settings(
         vault_root=Path(os.environ.get("MNEME_VAULT_ROOT", DEFAULT_VAULT_ROOT)),
         write_token=token,
         max_upload_bytes=max_upload,
+        hephaestus_base_url=hephaestus_url,
+        known_projects=known_projects,
     )
 
 
@@ -97,7 +197,28 @@ def load_settings() -> Settings:
 # ---------------------------------------------------------------------------
 
 
-DocumentFunction = Literal["research", "plan"]
+DocumentFunction = Literal[
+    "research",
+    "plan",
+    "synthesis",
+    "decision",
+    "reference",
+    "insight",
+    "preference",
+]
+
+SourceType = Literal[
+    "human_capture",
+    "agent_synthesis",
+    "web_page",
+    "github_issue",
+    "external_document",
+    "unknown",
+]
+
+ContextType = Literal["cfd", "cue", "project"]
+
+DocumentStatus = Literal["active", "draft", "superseded", "archived"]
 
 
 def _validate_source_url(value: Optional[str]) -> Optional[str]:
@@ -125,8 +246,59 @@ def _normalize_tags(tags: list[str]) -> list[str]:
 
 
 def _manifest_for_response(manifest: dict) -> dict:
-    """Ensure responses always expose an effective document function."""
-    return {**manifest, "function": effective_document_function(manifest)}
+    """Ensure responses always expose an effective document function and provenance."""
+    response = {**manifest, "function": effective_document_function(manifest)}
+    provenance = effective_provenance(manifest)
+    if provenance.get("source_url") and not response.get("source_url"):
+        response["source_url"] = provenance["source_url"]
+    response["provenance"] = provenance
+    return response
+
+
+class Provenance(BaseModel):
+    """Structured provenance for a document."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_type: SourceType = "unknown"
+    agent_id: Optional[str] = Field(default=None, max_length=128)
+    session_id: Optional[str] = Field(default=None, max_length=256)
+    source_url: Optional[str] = Field(default=None, max_length=2048)
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+    @field_validator("source_url")
+    @classmethod
+    def _check_url(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_source_url(value)
+
+    @field_validator("agent_id", "session_id")
+    @classmethod
+    def _strip_text(cls, value: Optional[str]) -> Optional[str]:
+        return value.strip() if isinstance(value, str) else value
+
+
+class ContextId(BaseModel):
+    """Reference to a Control Alt context (CFD, Cue, project)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: ContextType
+    id: str = Field(min_length=1, max_length=256)
+
+    @field_validator("id")
+    @classmethod
+    def _strip_id(cls, value: str) -> str:
+        return value.strip()
+
+
+class Relationships(BaseModel):
+    """Cross-document relationships."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    parent_id: Optional[str] = None
+    supersedes: list[str] = Field(default_factory=list)
+    related_ids: list[str] = Field(default_factory=list)
 
 
 class DocumentMetadata(BaseModel):
@@ -136,15 +308,22 @@ class DocumentMetadata(BaseModel):
 
     project_id: str = Field(pattern=_PROJECT_ID_PATTERN)
     title: str = Field(min_length=1, max_length=500)
-    function: DocumentFunction = DEFAULT_DOCUMENT_FUNCTION
+    function: DocumentFunction
     author: Optional[str] = Field(default=None, max_length=500)
     publisher: Optional[str] = Field(default=None, max_length=500)
     published_at: Optional[datetime] = None
     source_url: Optional[str] = Field(default=None, max_length=2048)
     captured_at: Optional[datetime] = None
     tags: list[str] = Field(default_factory=list, max_length=64)
+    provenance: Optional[Provenance] = None
+    context_ids: list[ContextId] = Field(default_factory=list)
+    relationships: Optional[Relationships] = None
+    status: DocumentStatus = "active"
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    reviewed_at: Optional[datetime] = None
+    reviewed_by: Optional[str] = Field(default=None, max_length=128)
 
-    @field_validator("title", "author", "publisher")
+    @field_validator("title", "author", "publisher", "reviewed_by")
     @classmethod
     def _strip_text(cls, value: Optional[str]) -> Optional[str]:
         return value.strip() if isinstance(value, str) else value
@@ -158,6 +337,31 @@ class DocumentMetadata(BaseModel):
     @classmethod
     def _clean_tags(cls, tags: list[str]) -> list[str]:
         return _normalize_tags(tags)
+
+    @model_validator(mode="after")
+    def _sync_provenance_source_url(self) -> "DocumentMetadata":
+        # Keep top-level source_url and provenance.source_url in sync.
+        provenance = self.provenance
+        top_url = self.source_url
+        if provenance is None:
+            self.provenance = Provenance(source_url=top_url)
+        elif provenance.source_url is None and top_url is not None:
+            provenance.source_url = top_url
+        elif top_url is None and provenance.source_url is not None:
+            self.source_url = provenance.source_url
+        return self
+
+    @model_validator(mode="after")
+    def _require_source_url_for_agent_research(self) -> "DocumentMetadata":
+        if self.function == "research":
+            provenance = self.provenance or Provenance()
+            if provenance.source_type != "human_capture":
+                url = provenance.source_url or self.source_url
+                if not url:
+                    raise ValueError(
+                        "research documents from non-human sources require a source_url"
+                    )
+        return self
 
 
 class DocumentPatch(BaseModel):
@@ -175,6 +379,13 @@ class DocumentPatch(BaseModel):
     captured_at: Optional[datetime] = None
     tags: Optional[list[str]] = Field(default=None, max_length=64)
     body: Optional[str] = None
+    provenance: Optional[Provenance] = None
+    context_ids: Optional[list[ContextId]] = None
+    relationships: Optional[Relationships] = None
+    status: Optional[DocumentStatus] = None
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    reviewed_at: Optional[datetime] = None
+    reviewed_by: Optional[str] = Field(default=None, max_length=128)
 
     @field_validator("source_url")
     @classmethod
@@ -185,6 +396,33 @@ class DocumentPatch(BaseModel):
     @classmethod
     def _clean_tags(cls, tags: Optional[list[str]]) -> Optional[list[str]]:
         return None if tags is None else _normalize_tags(tags)
+
+    @field_validator("reviewed_by")
+    @classmethod
+    def _strip_text(cls, value: Optional[str]) -> Optional[str]:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _sync_provenance_source_url(self) -> "DocumentPatch":
+        if self.provenance is not None and self.source_url is not None:
+            if self.provenance.source_url is None:
+                self.provenance.source_url = self.source_url
+            elif self.provenance.source_url != self.source_url:
+                # If both are provided, provenance wins; keep top-level in sync.
+                self.source_url = self.provenance.source_url
+        return self
+
+    @model_validator(mode="after")
+    def _require_source_url_for_agent_research(self) -> "DocumentPatch":
+        if self.function == "research":
+            provenance = self.provenance or Provenance()
+            if provenance.source_type != "human_capture":
+                url = provenance.source_url or self.source_url
+                if not url:
+                    raise ValueError(
+                        "research documents from non-human sources require a source_url"
+                    )
+        return self
 
 
 class AttachmentInfo(BaseModel):
@@ -210,6 +448,13 @@ class DocumentSummary(BaseModel):
     updated_at: str
     tags: list[str] = Field(default_factory=list)
     attachments: list[AttachmentInfo] = Field(default_factory=list)
+    provenance: Optional[dict[str, Any]] = None
+    context_ids: list[dict[str, Any]] = Field(default_factory=list)
+    relationships: Optional[dict[str, Any]] = None
+    status: DocumentStatus = "active"
+    confidence: Optional[float] = None
+    reviewed_at: Optional[str] = None
+    reviewed_by: Optional[str] = None
 
 
 class DocumentDetail(DocumentSummary):
@@ -341,7 +586,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app = FastAPI(
         title="Mneme",
         version=__version__,
-        description="Durable, multi-project research document vault.",
+        description="Durable cross-project Control Alt Knowledge store.",
     )
     app.state.settings = settings
     app.state.store = DocumentStore(settings.vault_root)
@@ -403,6 +648,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         project_id: Optional[str] = Query(default=None, max_length=128),
         tag: Optional[str] = Query(default=None, max_length=100),
         function: Optional[DocumentFunction] = Query(default=None),
+        context_type: Optional[str] = Query(default=None, max_length=64),
+        context_id: Optional[str] = Query(default=None, max_length=256),
+        status: Optional[DocumentStatus] = Query(default=None),
         limit: int = Query(default=50, ge=1, le=500),
         offset: int = Query(default=0, ge=0),
     ) -> DocumentList:
@@ -411,6 +659,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             project_id=project_id,
             tag=tag,
             function=function,
+            context_type=context_type,
+            context_id=context_id,
+            status=status,
             limit=limit,
             offset=offset,
         )
@@ -457,6 +708,53 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             headers={"ETag": f'"{entry["sha256"]}"'},
         )
 
+    @router.get("/documents/{doc_id}/context", response_model=list[ContextId])
+    def get_document_context(
+        doc_id: str,
+        store: Annotated[DocumentStore, Depends(get_store)],
+    ) -> list[ContextId]:
+        manifest = store.read_manifest(doc_id)
+        return [ContextId.model_validate(c) for c in manifest.get("context_ids") or []]
+
+    @router.get("/documents/{doc_id}/related", response_model=DocumentList)
+    def get_related_documents(
+        doc_id: str,
+        store: Annotated[DocumentStore, Depends(get_store)],
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> DocumentList:
+        manifest = store.read_manifest(doc_id)
+        relationships = manifest.get("relationships") or {}
+        related_ids: list[str] = []
+        if relationships.get("parent_id"):
+            related_ids.append(relationships["parent_id"])
+        related_ids.extend(relationships.get("supersedes") or [])
+        related_ids.extend(relationships.get("related_ids") or [])
+        # Preserve order while removing duplicates.
+        seen: set[str] = set()
+        unique_ids: list[str] = []
+        for rid in related_ids:
+            if rid not in seen:
+                seen.add(rid)
+                unique_ids.append(rid)
+
+        manifests: list[dict[str, Any]] = []
+        for rid in unique_ids:
+            try:
+                manifests.append(store.read_manifest(rid))
+            except DocumentNotFound:
+                continue
+        total = len(manifests)
+        return DocumentList(
+            total=total,
+            limit=limit,
+            offset=offset,
+            items=[
+                DocumentSummary.model_validate(_manifest_for_response(m))
+                for m in manifests[offset : offset + limit]
+            ],
+        )
+
     # -- writes (token-gated) ----------------------------------------------
 
     @router.post(
@@ -486,6 +784,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"invalid metadata: {exc}",
             ) from None
+
+        _warn_unknown_project(meta.project_id, cfg.known_projects)
 
         body_bytes = len(body.encode("utf-8"))
         if body_bytes > cfg.max_upload_bytes:
@@ -524,6 +824,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     ) -> DocumentDetail:
         provided = patch.model_dump(mode="json", include=patch.model_fields_set)
         body = provided.pop("body", None)
+        if "project_id" in provided:
+            _warn_unknown_project(provided["project_id"], cfg.known_projects)
         if body is not None and len(body.encode("utf-8")) > cfg.max_upload_bytes:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -602,6 +904,44 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             user_agent=request.headers.get("user-agent"),
         )
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @router.post(
+        "/migrate/reclassify",
+        dependencies=[Depends(require_write_token)],
+    )
+    def reclassify_documents(
+        request: Request,
+        store: Annotated[DocumentStore, Depends(get_store)],
+        audit: Annotated[AuditLogger, Depends(get_audit)],
+        dry_run: bool = Query(default=False),
+    ) -> dict[str, Any]:
+        """One-time migration to reclassify legacy documents using heuristics.
+
+        Use ``?dry_run=true`` to preview changes without writing them.
+        """
+        changes: list[dict[str, Any]] = []
+        for doc_id in store.iter_doc_ids():
+            manifest = store.read_manifest(doc_id)
+            updates = _infer_reclassification(manifest)
+            if not updates:
+                continue
+            changes.append(
+                {
+                    "id": doc_id,
+                    "title": manifest.get("title"),
+                    "current_function": manifest.get("function"),
+                    "changes": updates,
+                }
+            )
+            if not dry_run:
+                store.update_document(doc_id, metadata=updates)
+                audit.log(
+                    "reclassify",
+                    doc_id=doc_id,
+                    ip=request.client.host if request.client else None,
+                    user_agent=request.headers.get("user-agent"),
+                )
+        return {"dry_run": dry_run, "count": len(changes), "changes": changes}
 
     # `/api` is the canonical contract. Root aliases remain for simple LAN
     # clients and backward compatibility with the initial v1 test harness.

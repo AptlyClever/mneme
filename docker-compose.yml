@@ -20,6 +20,8 @@ services:
       # Axiom effective settings (chrome/branding only; Mneme is not the hub)
       AXIOM_BASE_URL: http://192.168.68.93:7895
       AXIOM_PUBLIC_BASE_URL: http://192.168.68.93:7895
+      # Hephaestus project catalog (canonical project vocabulary; fail-soft if unreachable)
+      HEPHAESTUS_BASE_URL: http://192.168.68.93:8798
     volumes:
       - /mnt/data/vault/mneme:/mnt/data/vault/mneme
     healthcheck:

@@ -38,10 +38,33 @@ ATTACHMENTS_DIR = "attachments"
 STAGING_DIR = ".staging"
 MANIFEST_SCHEMA_VERSION = 1
 
-# Constrained document-purpose discriminator. Existing manifests that omit the
-# field are treated as research (the historical default) without rewriting disk.
-DOCUMENT_FUNCTIONS = frozenset({"research", "plan"})
+# Constrained document-purpose discriminator for Control Alt Knowledge.
+# Existing manifests that omit the field are treated as research (the historical
+# default) without rewriting disk. This set is intentionally small and expandable;
+# new functions must be added deliberately, not inferred from tags.
+DOCUMENT_FUNCTIONS = frozenset(
+    {
+        "research",    # externally captured, verifiable source
+        "plan",        # forward-looking authored plan
+        "synthesis",   # agent-authored summary from sources/sessions
+        "decision",    # director/operator decision record
+        "reference",   # reference material, boards, specs
+        "insight",     # director's personal insight or evaluation
+        "preference",  # director's stated preference or working style
+    }
+)
 DEFAULT_DOCUMENT_FUNCTION = "research"
+
+_SOURCE_TYPES = frozenset(
+    {
+        "human_capture",       # human operator or director capture
+        "agent_synthesis",     # agent-authored synthesis
+        "web_page",            # captured web page
+        "github_issue",        # captured GitHub issue/discussion
+        "external_document",     # captured external document
+        "unknown",             # legacy / unspecified
+    }
+)
 
 _METADATA_KEYS = (
     "project_id",
@@ -53,6 +76,13 @@ _METADATA_KEYS = (
     "source_url",
     "captured_at",
     "tags",
+    "provenance",
+    "context_ids",
+    "relationships",
+    "status",
+    "confidence",
+    "reviewed_at",
+    "reviewed_by",
 )
 
 
@@ -62,6 +92,21 @@ def effective_document_function(manifest: dict[str, Any]) -> str:
     if value in DOCUMENT_FUNCTIONS:
         return value
     return DEFAULT_DOCUMENT_FUNCTION
+
+
+def effective_provenance(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return the provenance block, using legacy top-level source_url as fallback."""
+    provenance = manifest.get("provenance") or {}
+    if not provenance.get("source_url") and manifest.get("source_url"):
+        provenance = {**provenance, "source_url": manifest.get("source_url")}
+    if not provenance.get("source_type"):
+        provenance = {**provenance, "source_type": "unknown"}
+    return provenance
+
+
+def is_agent_source(source_type: Optional[str]) -> bool:
+    """True if the source_type indicates a machine/agent origin."""
+    return source_type in {"agent_synthesis", "web_page", "github_issue", "external_document"}
 
 _DOC_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ ()\[\]-]*$")
@@ -429,10 +474,14 @@ class DocumentStore:
         project_id: Optional[str] = None,
         tag: Optional[str] = None,
         function: Optional[str] = None,
+        context_type: Optional[str] = None,
+        context_id: Optional[str] = None,
+        status: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[int, list[dict[str, Any]]]:
-        """Search title/body/tags, optionally filtered by project, tag, function.
+        """Search title/body/tags, optionally filtered by project, tag, function,
+        context, and status.
 
         Multi-term AND: every term must appear somewhere in the document.
         Scoring: title match = 3 pts, tag match = 2 pts, body match = 1 pt
@@ -457,6 +506,19 @@ class DocumentStore:
             tags = [str(t) for t in (manifest.get("tags") or [])]
             if tag is not None and tag not in tags:
                 continue
+            if status is not None and manifest.get("status") != status:
+                continue
+            if context_type is not None or context_id is not None:
+                contexts = manifest.get("context_ids") or []
+                match = False
+                for ctx in contexts:
+                    type_ok = context_type is None or ctx.get("type") == context_type
+                    id_ok = context_id is None or ctx.get("id") == context_id
+                    if type_ok and id_ok:
+                        match = True
+                        break
+                if not match:
+                    continue
             if terms:
                 title_lower = str(manifest.get("title") or "").lower()
                 tags_lower = " ".join(t.lower() for t in tags)

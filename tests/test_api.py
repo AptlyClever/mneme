@@ -192,6 +192,81 @@ def test_create_rejects_unsafe_attachment_filename(client: TestClient, auth):
     assert "filename" in resp.json()["detail"].lower()
 
 
+@pytest.mark.parametrize(
+    "function", ["synthesis", "decision", "reference", "insight", "preference"]
+)
+def test_create_new_document_functions(client: TestClient, auth, function):
+    resp = create_doc(client, auth, function=function)
+    assert resp.status_code == 201
+    doc = resp.json()
+    assert doc["function"] == function
+
+
+def test_create_research_requires_source_url_for_agent_source(client: TestClient, auth):
+    metadata = {
+        "project_id": "bandit",
+        "title": "Agent research",
+        "function": "research",
+        "provenance": {"source_type": "agent_synthesis", "agent_id": "cursor"},
+    }
+    resp = client.post(
+        "/documents",
+        data={"metadata": json.dumps(metadata), "body": "body"},
+        headers=auth,
+    )
+    assert resp.status_code == 422
+    assert "source_url" in resp.json()["detail"]
+
+
+def test_create_research_allows_no_source_url_for_human_capture(client: TestClient, auth):
+    metadata = {
+        "project_id": "bandit",
+        "title": "Human research",
+        "function": "research",
+        "provenance": {"source_type": "human_capture"},
+    }
+    resp = client.post(
+        "/documents",
+        data={"metadata": json.dumps(metadata), "body": "body"},
+        headers=auth,
+    )
+    assert resp.status_code == 201
+
+
+def test_create_syncs_source_url_and_provenance(client: TestClient, auth):
+    resp = create_doc(
+        client,
+        auth,
+        function="research",
+        source_url="https://example.com/article",
+    )
+    assert resp.status_code == 201
+    doc = resp.json()
+    assert doc["source_url"] == "https://example.com/article"
+    assert doc["provenance"]["source_url"] == "https://example.com/article"
+
+
+def test_create_with_context_and_relationships(client: TestClient, auth):
+    metadata = {
+        "project_id": "bandit",
+        "title": "Rich doc",
+        "function": "synthesis",
+        "context_ids": [{"type": "cfd", "id": "cfd-123"}],
+        "relationships": {"parent_id": "a" * 32, "related_ids": ["b" * 32]},
+        "status": "draft",
+    }
+    resp = client.post(
+        "/documents",
+        data={"metadata": json.dumps(metadata), "body": "body"},
+        headers=auth,
+    )
+    assert resp.status_code == 201
+    doc = resp.json()
+    assert doc["context_ids"][0] == {"type": "cfd", "id": "cfd-123"}
+    assert doc["relationships"]["parent_id"] == "a" * 32
+    assert doc["status"] == "draft"
+
+
 # -- get ----------------------------------------------------------------------
 
 
@@ -491,6 +566,116 @@ def test_operator_ui_exposes_function_controls(client: TestClient):
     assert js.status_code == 200
     assert 'params.set("function"' in js.text
     assert "function:" in js.text
+
+
+def test_list_filter_by_status(client: TestClient, auth):
+    active_id = create_doc(client, auth, title="Active doc").json()["id"]
+    draft_id = create_doc(
+        client, auth, title="Draft doc", status="draft"
+    ).json()["id"]
+    assert client.get("/documents", params={"status": "draft"}).json()["total"] == 1
+    assert client.get(
+        "/documents", params={"status": "active"}
+    ).json()["total"] >= 1
+
+
+def test_list_filter_by_context(client: TestClient, auth):
+    meta = {
+        "project_id": "bandit",
+        "title": "Context doc",
+        "function": "synthesis",
+        "context_ids": [{"type": "cfd", "id": "cfd-123"}],
+    }
+    doc_id = client.post(
+        "/documents",
+        data={"metadata": json.dumps(meta), "body": "body"},
+        headers=auth,
+    ).json()["id"]
+    assert client.get(
+        "/documents", params={"context_type": "cfd", "context_id": "cfd-123"}
+    ).json()["total"] == 1
+    assert client.get(
+        "/documents", params={"context_type": "cue", "context_id": "cfd-123"}
+    ).json()["total"] == 0
+    resp = client.get(f"/documents/{doc_id}/context")
+    assert resp.status_code == 200
+    assert resp.json()[0]["id"] == "cfd-123"
+
+
+def test_get_related_documents(client: TestClient, auth):
+    parent_id = create_doc(client, auth, title="Parent").json()["id"]
+    child_meta = {
+        "project_id": "bandit",
+        "title": "Child",
+        "function": "synthesis",
+        "relationships": {"parent_id": parent_id, "related_ids": [parent_id]},
+    }
+    child_id = client.post(
+        "/documents",
+        data={"metadata": json.dumps(child_meta), "body": "body"},
+        headers=auth,
+    ).json()["id"]
+    related = client.get(f"/documents/{child_id}/related").json()
+    assert related["total"] == 1
+    assert related["items"][0]["id"] == parent_id
+
+
+def test_migrate_reclassify_dry_run(client: TestClient, auth, vault_root):
+    # Create a legacy-looking doc that will be reclassified.
+    doc_id = create_doc(
+        client,
+        auth,
+        function="research",
+        title="Dobson reference photos",
+        body="body",
+    ).json()["id"]
+    # Remove provenance so it looks legacy.
+    manifest = json.loads((vault_root / doc_id / "manifest.json").read_text())
+    manifest["provenance"] = {"source_type": "unknown"}
+    (vault_root / doc_id / "manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+
+    resp = client.post("/migrate/reclassify?dry_run=true", headers=auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["dry_run"] is True
+    change = next(c for c in data["changes"] if c["id"] == doc_id)
+    assert change["changes"]["function"] == "reference"
+    # Verify disk was not changed.
+    manifest_after = json.loads(
+        (vault_root / doc_id / "manifest.json").read_text()
+    )
+    assert manifest_after["function"] == "research"
+
+
+def test_migrate_reclassify_applies_changes(client: TestClient, auth, vault_root):
+    doc_id = create_doc(
+        client,
+        auth,
+        function="research",
+        title="Agent synthesis doc",
+        author="Cursor agent",
+        body="body",
+    ).json()["id"]
+    manifest = json.loads((vault_root / doc_id / "manifest.json").read_text())
+    manifest["provenance"] = {"source_type": "unknown"}
+    (vault_root / doc_id / "manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+
+    resp = client.post("/migrate/reclassify", headers=auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    change = next(c for c in data["changes"] if c["id"] == doc_id)
+    assert change["changes"]["function"] == "synthesis"
+    assert change["changes"]["provenance"]["source_type"] == "agent_synthesis"
+
+    manifest_after = json.loads(
+        (vault_root / doc_id / "manifest.json").read_text()
+    )
+    assert manifest_after["function"] == "synthesis"
+    assert manifest_after["provenance"]["source_type"] == "agent_synthesis"
 
 
 # -- upload limits ------------------------------------------------------------
